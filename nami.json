@@ -15,6 +15,10 @@
   "media": {
     "enabled": true
   },
+  "commands": {
+    "review": "Inspect the workspace files, run code quality checks, and review for bugs or potential vulnerabilities.",
+    "summarize": "Summarize key project decisions, architectural state, and recent changes."
+  },
   "storage": {
     "db_path": "./nami.db",
     "wiki_dir": "./wiki"

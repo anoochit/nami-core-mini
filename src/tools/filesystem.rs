@@ -101,12 +101,11 @@ pub fn create_filesystem_toolset(guard: WorkspaceGuard) -> Vec<Arc<dyn Tool>> {
                     Err(e) => return Ok(json!({ "error": e.to_string() })),
                 };
 
-                if let Some(parent) = target_path.parent() {
-                    if !parent.exists() {
-                        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                            return Ok(json!({ "error": format!("Failed to create parent directories: {}", e) }));
-                        }
-                    }
+                if let Some(parent) = target_path.parent()
+                    && !parent.exists()
+                    && let Err(e) = tokio::fs::create_dir_all(parent).await
+                {
+                    return Ok(json!({ "error": format!("Failed to create parent directories: {}", e) }));
                 }
 
                 if let Err(e) = tokio::fs::write(&target_path, content).await {
@@ -152,11 +151,9 @@ pub fn create_filesystem_toolset(guard: WorkspaceGuard) -> Vec<Arc<dyn Tool>> {
                 };
 
                 let mut matches = Vec::new();
-                for entry in glob::glob(&full_pattern).into_iter().flatten() {
-                    if let Ok(path) = entry {
-                        if path.is_file() {
-                            matches.push(path.to_string_lossy().to_string());
-                        }
+                for path in glob::glob(&full_pattern).into_iter().flatten().flatten() {
+                    if path.is_file() {
+                        matches.push(path.to_string_lossy().to_string());
                     }
                 }
 

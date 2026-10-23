@@ -408,8 +408,56 @@ pub async fn render_stream_response(
     (tracker.stats, accumulated_answer)
 }
 
+/// Expands a custom slash command from `config.commands`.
+///
+/// Returns `Some(expanded_prompt)` if `cmd_name` matches a configured shortcut.
+/// Supports optional `{args}` placeholder in template, or appends args on a new line.
+pub fn expand_custom_command(
+    commands: &HashMap<String, String>,
+    line: &str,
+) -> Option<String> {
+    if !line.starts_with('/') {
+        return None;
+    }
+    let rest = line[1..].trim();
+    if rest.is_empty() {
+        return None;
+    }
+    let mut parts = rest.splitn(2, char::is_whitespace);
+    let cmd_name = parts.next()?;
+    let args = parts.next().unwrap_or("").trim();
+
+    let template = commands.get(cmd_name)?;
+
+    if template.contains("{args}") {
+        Some(template.replace("{args}", args))
+    } else if !args.is_empty() {
+        Some(format!("{template}\n\nContext: {args}"))
+    } else {
+        Some(template.clone())
+    }
+}
+
+/// Checks if a slash command is a built-in REPL command.
+pub fn is_builtin_command(line: &str) -> bool {
+    let cmd = line.split_whitespace().next().unwrap_or("");
+    matches!(
+        cmd,
+        "exit"
+            | "quit"
+            | "/exit"
+            | "/quit"
+            | "/new"
+            | "/session"
+            | "/help"
+            | "/grill"
+            | "/plan"
+            | "/goal"
+    )
+}
+
 /// รัน REPL อินเทอร์แอคทีฟ อ่านบรรทัดจาก stdin แล้วส่งคำขอผ่าน NamiApiClient
-pub async fn run_repl(client: &mut NamiApiClient) -> anyhow::Result<()> {
+pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiConfig) -> anyhow::Result<()> {
     println!();
     println!("  Nami - ({})", client.app_name());
     println!("  Type a message to chat. Type 'exit' to quit or '/help' for options.");
@@ -467,7 +515,15 @@ pub async fn run_repl(client: &mut NamiApiClient) -> anyhow::Result<()> {
             println!("  /plan     - Generate structured implementation plan (PLAN.md)");
             println!("  /goal     - Run autonomous Ralph Wiggum development loop");
             println!("  /help     - Show this help message");
-            println!("  exit      - Exit Nami\n");
+            println!("  exit      - Exit Nami");
+            if !config.commands.is_empty() {
+                println!();
+                println!("Custom Shortcuts (nami.json):");
+                for (name, template) in &config.commands {
+                    println!("  /{:<8} - {}", name, truncate_line(template, 60));
+                }
+            }
+            println!();
             continue;
         }
 
@@ -578,7 +634,18 @@ pub async fn run_repl(client: &mut NamiApiClient) -> anyhow::Result<()> {
             continue;
         }
 
-        let response = match client.run_stream(trimmed).await {
+        let prompt_text = if let Some(expanded) = expand_custom_command(&config.commands, trimmed) {
+            let cmd_name = trimmed.split_whitespace().next().unwrap_or("")[1..].to_string();
+            println!("⚡ Shortcut /{} -> {}\n", cmd_name, truncate_line(&expanded, 80));
+            expanded
+        } else if trimmed.starts_with('/') && !is_builtin_command(trimmed) {
+            eprintln!("Unknown command: {trimmed}. Type '/help' for available commands.\n");
+            continue;
+        } else {
+            trimmed.to_string()
+        };
+
+        let response = match client.run_stream(&prompt_text).await {
             Ok(res) => res,
             Err(e) => {
                 eprintln!("\n[error] {}\n", e);
@@ -836,5 +903,49 @@ mod tests {
         let response = serde_json::json!("file saved");
         let lines = tool_result_lines("create_file", &response);
         assert_eq!(lines, vec!["✅ create_file: file saved"]);
+    }
+
+    #[test]
+    fn test_expand_custom_command_simple() {
+        let mut commands = HashMap::new();
+        commands.insert("review".to_string(), "Inspect the codebase changes".to_string());
+
+        let expanded = expand_custom_command(&commands, "/review").unwrap();
+        assert_eq!(expanded, "Inspect the codebase changes");
+    }
+
+    #[test]
+    fn test_expand_custom_command_with_args_placeholder() {
+        let mut commands = HashMap::new();
+        commands.insert("review".to_string(), "Inspect file: {args}".to_string());
+
+        let expanded = expand_custom_command(&commands, "/review src/main.rs").unwrap();
+        assert_eq!(expanded, "Inspect file: src/main.rs");
+    }
+
+    #[test]
+    fn test_expand_custom_command_appends_args_when_no_placeholder() {
+        let mut commands = HashMap::new();
+        commands.insert("review".to_string(), "Inspect the codebase changes".to_string());
+
+        let expanded = expand_custom_command(&commands, "/review src/main.rs").unwrap();
+        assert_eq!(expanded, "Inspect the codebase changes\n\nContext: src/main.rs");
+    }
+
+    #[test]
+    fn test_expand_custom_command_unknown_returns_none() {
+        let commands = HashMap::new();
+        assert!(expand_custom_command(&commands, "/unknown").is_none());
+        assert!(expand_custom_command(&commands, "hello").is_none());
+    }
+
+    #[test]
+    fn test_is_builtin_command() {
+        assert!(is_builtin_command("/new"));
+        assert!(is_builtin_command("/grill"));
+        assert!(is_builtin_command("/plan"));
+        assert!(is_builtin_command("/goal"));
+        assert!(is_builtin_command("exit"));
+        assert!(!is_builtin_command("/review"));
     }
 }

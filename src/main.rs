@@ -217,7 +217,7 @@ async fn main() -> anyhow::Result<()> {
 
             match cli_args.command {
                 Command::Chat => {
-                    cli::run_repl(&mut client).await?;
+                    cli::run_repl(&mut client, &config).await?;
                 }
                 Command::Ask(text) => {
                     let response = client.run_stream(&text).await?;

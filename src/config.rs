@@ -13,6 +13,9 @@ pub struct NamiConfig {
     pub temperature: Option<f32>,
     pub workspace: WorkspaceConfig,
     pub storage: StorageConfig,
+    /// Custom slash command prompt shortcuts (e.g. `"review": "Inspect codebase and run cargo test"`)
+    #[serde(default)]
+    pub commands: HashMap<String, String>,
     /// การตั้งค่า HTTP Server
     #[serde(default)]
     pub server: ServerOptionsConfig,
@@ -538,5 +541,23 @@ mod tests {
         }
         config.temperature = Some(-0.1);
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_commands_parse_and_default() {
+        let json = r#"{
+            "name": "n", "version": "1", "provider": "p", "model": "m",
+            "system_instruction": "s",
+            "workspace": { "allowed_paths": ["./"], "read_only": false },
+            "storage": { "db_path": "./n.db", "wiki_dir": "./wiki" },
+            "commands": {
+                "review": "Inspect the codebase changes",
+                "summarize": "Summarize the project"
+            }
+        }"#;
+
+        let config: NamiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.commands.len(), 2);
+        assert_eq!(config.commands.get("review").unwrap(), "Inspect the codebase changes");
     }
 }
