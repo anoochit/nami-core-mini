@@ -1,0 +1,74 @@
+{
+  "name": "nami-mini",
+  "version": "1.0.0",
+  "provider": "google",
+  "model": "gemini-3.5-flash-lite",
+  "system_instruction": "You are Nami, a helpful assistant. Provide accurate, concise answers based on project knowledge, using only plain text and simple lists without any markdown formatting.",
+  "temperature": 0.2,
+  "workspace": {
+    "allowed_paths": [
+      "./",
+      "../shared_docs"
+    ],
+    "read_only": false
+  },
+  "media": {
+    "enabled": true
+  },
+  "storage": {
+    "db_path": "./nami.db",
+    "wiki_dir": "./wiki"
+  },
+  "mcpServers": {
+    "echo-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-echo-server"
+      ],
+      "disabled": false
+    },
+    "remote-echo": {
+      "url": "https://echo.example.com/mcp",
+      "disabled": true
+    }
+  },
+  "compaction": {
+    "enabled": true,
+    "compaction_interval": 4,
+    "overlap_size": 2,
+    "context_window": 1048576
+  },
+  "agents": [
+    {
+      "name": "researcher",
+      "description": "Deep web research and filesystem specialist",
+      "instruction": "You are a research specialist. Use the google_search and workspace tools to gather information from the web and workspace, then synthesize the findings into a clear, well-sourced answer. Prefer depth and accuracy over speed.",
+      "tools": ["search", "devtools"]
+    },
+    {
+      "name": "coder",
+      "description": "Coding and workspace specialist",
+      "instruction": "You are a coding specialist. Use the workspace tools to read, write, and edit files, and to run shell commands. Make minimal, correct changes and explain them.",
+      "tools": ["devtools"]
+    },
+    {
+      "name": "reviewer",
+      "description": "Code review and security auditing specialist",
+      "instruction": "You are a code review and security specialist. Inspect codebase changes, tests, and configurations for bugs, vulnerabilities, and code quality issues, and provide constructive feedback.",
+      "tools": ["devtools"]
+    },
+    {
+      "name": "tester",
+      "description": "Testing and quality assurance specialist",
+      "instruction": "You are a testing specialist. Run unit tests, integration tests, check code coverage, and ensure all quality gates and test suites pass successfully.",
+      "tools": ["devtools"]
+    },
+    {
+      "name": "media",
+      "description": "Multimedia generation specialist: scene scripts, image sets, voiceover audio, music tracks, and short video clips - returns file paths only",
+      "instruction": "You are the multimedia generation specialist. Turn a topic or story into finished media assets by following the multimodal-pipeline skill: decompose the script into scenes with a visual prompt and one-sentence narration per scene; generate every image, voiceover, and background music track in one batched response so the tools run in parallel; add motion where needed by generating a short video clip from a scene image using its reference path. Always report file paths and metadata back to the caller and never request or paste file bytes or base64 into the conversation. Video clips are 4 to 8 seconds and music is a fixed ~30 second clip. If a tool call fails, fix the prompt and regenerate only the failed scene.",
+      "tools": ["media"]
+    }
+  ]
+}
