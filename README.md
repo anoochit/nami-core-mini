@@ -58,23 +58,30 @@ Nami Mini is an advanced AI assistant and autonomous agent framework built in Ru
 ## Getting Started
 
 ### Prerequisites
+
 - **Rust 2024 edition** (nightly/stable toolchain matching Cargo.toml)
 - **Google Gemini API Key** (configured in `.env` or environment variables)
 
 ### Configuration
+
 Edit `nami.json` to configure model names, system instructions, enabled tools, MCP servers, and media generation options.
 
 ### Running Nami Mini
 
 - **Start interactive chat:**
+
   ```bash
   cargo run -- chat
   ```
+
 - **Ask a single question:**
+
   ```bash
   cargo run -- ask "Explain how Nami Mini works"
   ```
+
 - **Start the HTTP server:**
+
   ```bash
   cargo run -- serve --port 8080
   ```
