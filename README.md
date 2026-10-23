@@ -38,17 +38,23 @@ Nami Mini is an advanced AI assistant and autonomous agent framework built in Ru
 ```text
 ├── Cargo.toml                # Rust dependencies and workspace configuration
 ├── nami.json                 # Agent configuration, sub-agents, tools, and MCP servers
+├── .skills/                  # Automatic skill definitions (code-reviewer, multimodal-pipeline)
 ├── src/
 │   ├── main.rs               # CLI entrypoint and subcommand dispatcher
 │   ├── agent.rs              # Agent builder, model setup, and plugin configuration
+│   ├── api_client.rs         # SSE-speaking HTTP client for CLI surfaces
+│   ├── cli.rs                # Interactive REPL, prompt parsing, and stream rendering
 │   ├── config.rs             # Configuration structs and validation logic
-│   ├── server.rs             # Axum HTTP server and API endpoints
-│   ├── memory.rs             # SQLite memory and session adapters
-│   ├── workspace.rs          # Security guard for file operations
+│   ├── server.rs             # Axum HTTP server, static UI routes, and API endpoints
+│   ├── memory.rs             # SQLite memory adapter and wiki Markdown knowledge indexer
+│   ├── workspace.rs          # Security guard for file operations and sandboxing
 │   ├── compaction.rs         # Context window compaction logic
-│   ├── mcp.rs                # Stdio and HTTP MCP server managers
+│   ├── mcp.rs                # Stdio subprocess and remote HTTP MCP server managers
+│   ├── grill.rs              # Interactive /grill REPL command for idea refining
+│   ├── plan.rs               # Interactive /plan REPL command for task decomposition
+│   ├── goal.rs               # Interactive /goal REPL command for autonomous loops
 │   ├── media/                # Multimedia generation, assembly, and manifests
-│   └── tools/                # Built-in toolsets (filesystem, search, media, etc.)
+│   └── tools/                # Built-in toolsets (filesystem, search, weather, etc.)
 ├── book/                     # Comprehensive conceptual guide & architecture chapters
 └── wiki/                     # Spikes, implementation plans, and feature comparisons
 ```

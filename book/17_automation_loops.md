@@ -9,6 +9,7 @@ provider API errors when turn sequences fall out of strict user-model alternatio
 The fix is not a bigger context window. The fix is a loop with fresh context and disk-backed memory.
 
 In `nami chat`, this is implemented as a three-stage engineering pipeline:
+
 1. `/grill`: Inquire, challenge assumptions, and resolve trade-offs (`src/grill.rs`).
 2. `/plan`: Inspect the codebase and decompose the task into atomic steps (`src/plan.rs`).
 3. `/goal`: Run an autonomous execution loop with external verification backpressure (`src/goal.rs`).
@@ -63,6 +64,7 @@ You are an expert Principal Software Architect conducting an intensive "Grilling
 ```
 
 Two rules make `/grill` reliable:
+
 1. **Codebase first:** I read `Cargo.toml` and existing modules before speaking. If `src/memory.rs`
    already uses SQLite, I don't ask you what database we use; I recommend using the existing SQLite
    database.
@@ -88,16 +90,19 @@ pub fn build_plan_prompt(task: &str, grill_context: Option<&str>) -> String {
 ```
 
 Instead of immediately generating code, `/plan`:
+
 1. Checks for an existing `GRILL.md` and incorporates your agreed constraints.
 2. Uses `read_file` and `list_dir` to map existing architecture.
 3. Decomposes the work into atomic, testable phases.
 4. Formats each step with an explicit `/goal` command:
+
    ```markdown
    - [ ] **Step 1: In-Memory Cache Store**
      - Details: Implement thread-safe LRU cache in `src/cache.rs`.
      - Files: `src/cache.rs`, `src/lib.rs`
      - Command: `/goal "implement lru cache in src/cache.rs" --until "cargo test cache"`
    ```
+
 5. Automatically saves the output to **`PLAN.md`** (or `--out <path>`).
 
 ---
@@ -139,6 +144,7 @@ for iteration in 1..=spec.max_iterations {
 
 Because every iteration calls `client.new_session().await`, the context window is completely clean.
 This guarantees:
+
 - **Zero context degradation:** The model starts with 100% attention capacity on every iteration.
 - **Zero turn-order bugs:** Prevents provider-level errors (such as Gemini's `400: Requests ending with a model turn are not supported`) because every loop begins with a clean user prompt.
 - **State lives on disk:** My memory is not the chat history; it is the filesystem, git status, and test output.
@@ -165,17 +171,23 @@ pub enum UntilMode {
 ```
 
 ### Path A: Deterministic Shell Verification
+
 When you provide `--until "cargo test auth"` or `--until "npm test"`:
+
 - The runner executes the command in an OS subprocess (`cmd.exe /C` on Windows, `sh -c` on Unix) with a timeout (`run_command_check`).
 - If the exit code is `0`, the goal succeeds immediately.
 - If non-zero, the failure tail (stdout/stderr) is captured and injected into the prompt of iteration $i+1$ as targeted feedback.
 
 ### Path B: Natural Language Acceptance Criteria
+
 If you don't know the exact shell command and write:
+
 ```text
 /goal "update README.md" --until "contains installation instructions and license"
 ```
+
 The loop runs an **independent Evaluator turn** (`build_evaluator_prompt`):
+
 1. A fresh session is spawned with an auditor persona.
 2. The auditor inspects workspace files with filesystem tools.
 3. It responds strictly with `<verified>YES</verified>` or `<verified>NO</verified>` plus a bulleted list of missing items.
@@ -202,7 +214,7 @@ tokio::select! {
 ```
 
 Pressing `Ctrl-C` halts execution instantly, preserves all modified files in your workspace, and
-restores a fresh session so you return cleanly to the `> ` prompt in chat.
+restores a fresh session so you return cleanly to the `>` prompt in chat.
 
 ---
 
@@ -235,6 +247,7 @@ restores a fresh session so you return cleanly to the `> ` prompt in chat.
 ```
 
 Separation of concerns across the three commands makes autonomous coding predictable:
+
 - `/grill` ensures we build the right thing.
 - `/plan` ensures we build it in the right order.
 - `/goal` ensures we don't stop until it actually works.
