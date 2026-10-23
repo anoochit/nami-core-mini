@@ -132,12 +132,12 @@ impl TurnTracker {
 
 /// สร้างบรรทัดสรุป "thought time + token count" — คืน `None` เมื่อไม่มีอะไรจะแสดง
 ///
-/// ตัวอย่างผลลัพธ์: `thought 1.8s · tokens 1,240 (prompt 900 · output 160 · thinking 180)`
+/// ตัวอย่างผลลัพธ์: `💭 thought 1.8s · tokens 1,240 (prompt 900 · output 160 · thinking 180)`
 pub fn stats_line(stats: &TurnStats) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
 
     if stats.thinking_seen {
-        parts.push(format!("thought {}", format_duration(stats.thought)));
+        parts.push(format!("💭 thought {}", format_duration(stats.thought)));
     }
 
     if let Some(tokens) = stats.tokens {
@@ -201,16 +201,16 @@ fn fmt_int(value: i64) -> String {
 
 /// สรุปผล tool response เป็นบรรทัดสำหรับแสดงใน `tool:` section
 ///
-/// - `error` ( convention ของ tool nami) → บรรทัด `✗`
-/// - `outputs` (media tools: path + bytes + duration) → บรรทัด `✓` + รายการ path
-/// - อย่างอื่น → บรรทัด `✓` + JSON สั้น ๆ (ตัดที่ 160 อักขระ)
+/// - `error` ( convention ของ tool nami) → บรรทัด `❌`
+/// - `outputs` (media tools: path + bytes + duration) → บรรทัด `✅` + รายการ path
+/// - อย่างอื่น → บรรทัด `✅` + JSON สั้น ๆ (ตัดที่ 160 อักขระ)
 fn tool_result_lines(name: &str, response: &Value) -> Vec<String> {
     if let Some(err) = response.get("error").and_then(Value::as_str) {
-        return vec![format!("✗ {name}: {}", truncate_line(err, 200))];
+        return vec![format!("❌ {name}: {}", truncate_line(err, 200))];
     }
 
     if let Some(outputs) = response.get("outputs").and_then(Value::as_array) {
-        let mut lines = vec![format!("✓ {name}")];
+        let mut lines = vec![format!("✅ {name}")];
         for output in outputs {
             let path = output.get("path").and_then(Value::as_str).unwrap_or("?");
             let mut meta: Vec<String> = Vec::new();
@@ -234,7 +234,7 @@ fn tool_result_lines(name: &str, response: &Value) -> Vec<String> {
     } else {
         response.to_string()
     };
-    vec![format!("✓ {name}: {}", truncate_line(&text, 160))]
+    vec![format!("✅ {name}: {}", truncate_line(&text, 160))]
 }
 
 /// ปรับ progress chunk ให้เป็นบรรทัดเดียว: trim + ขึ้นบรรทัดใหม่ → ช่องว่าง
@@ -324,7 +324,7 @@ pub async fn render_stream_response(
                             && !text.is_empty()
                         {
                             if section != Section::Tool {
-                                print_section_header("tool", &mut first_output);
+                                print_section_header("🛠️ tool", &mut first_output);
                                 section = Section::Tool;
                             }
                             println!("{}", format_progress_chunk(text));
@@ -342,7 +342,7 @@ pub async fn render_stream_response(
                             accumulated_answer.push_str(text);
                             tracker.on_output(now);
                             if verbose && section != Section::Answer {
-                                print_section_header("answer", &mut first_output);
+                                print_section_header("💬 answer", &mut first_output);
                                 section = Section::Answer;
                             }
                             print!("{text}");
@@ -352,7 +352,7 @@ pub async fn render_stream_response(
                             tracker.on_thinking(now);
                             if verbose {
                                 if section != Section::Thinking {
-                                    print_section_header("thinking", &mut first_output);
+                                    print_section_header("🤔 thinking", &mut first_output);
                                     section = Section::Thinking;
                                 }
                                 print!("{thinking}");
@@ -368,10 +368,10 @@ pub async fn render_stream_response(
                             tracker.on_output(now);
                             if verbose {
                                 if section != Section::Tool {
-                                    print_section_header("tool", &mut first_output);
+                                    print_section_header("🛠️ tool", &mut first_output);
                                     section = Section::Tool;
                                 }
-                                println!("{name}({args})");
+                                println!("🔧 {name}({args})");
                                 io::stdout().flush().ok();
                             }
                         }
@@ -385,7 +385,7 @@ pub async fn render_stream_response(
                             tracker.on_output(now);
                             if verbose {
                                 if section != Section::Tool {
-                                    print_section_header("tool", &mut first_output);
+                                    print_section_header("🛠️ tool", &mut first_output);
                                     section = Section::Tool;
                                 }
                                 for line in tool_result_lines(
@@ -588,7 +588,7 @@ pub async fn run_repl(client: &mut NamiApiClient) -> anyhow::Result<()> {
 
         let (stats, _) = render_stream_response(response, true).await;
         if let Some(line) = stats_line(&stats) {
-            print!("\n{line}");
+            print!("\n\n{line}");
             io::stdout().flush().ok();
         }
         println!("\n");
@@ -720,7 +720,7 @@ mod tests {
             thinking_seen: true,
             tokens: None,
         };
-        assert_eq!(stats_line(&stats).as_deref(), Some("thought 1.8s"));
+        assert_eq!(stats_line(&stats).as_deref(), Some("💭 thought 1.8s"));
 
         stats.tokens = Some(TokenTotals {
             prompt: 900,
@@ -730,7 +730,7 @@ mod tests {
         });
         assert_eq!(
             stats_line(&stats).as_deref(),
-            Some("thought 1.8s · tokens 1,240 (prompt 900 · output 160 · thinking 180)")
+            Some("💭 thought 1.8s · tokens 1,240 (prompt 900 · output 160 · thinking 180)")
         );
 
         // ไม่มี thinking จริง (provider ไม่ stream thinking) ต้องไม่แสดง thought
@@ -757,7 +757,7 @@ mod tests {
             thinking_seen: true,
             tokens: None,
         };
-        assert_eq!(stats_line(&stats).as_deref(), Some("thought 420ms"));
+        assert_eq!(stats_line(&stats).as_deref(), Some("💭 thought 420ms"));
     }
 
     #[test]
@@ -809,7 +809,7 @@ mod tests {
             "run_dir": "media/run-1"
         });
         let lines = tool_result_lines("generate_video", &response);
-        assert_eq!(lines[0], "✓ generate_video");
+        assert_eq!(lines[0], "✅ generate_video");
         assert_eq!(lines[1], "  media/run-1/video-1.mp4 (1.2 MB · 8.0s)");
     }
 
@@ -817,7 +817,7 @@ mod tests {
     fn tool_result_lines_error_short_line() {
         let response = serde_json::json!({"error": "model not found: veo-x"});
         let lines = tool_result_lines("generate_video", &response);
-        assert_eq!(lines, vec!["✗ generate_video: model not found: veo-x"]);
+        assert_eq!(lines, vec!["❌ generate_video: model not found: veo-x"]);
     }
 
     #[test]
@@ -825,16 +825,16 @@ mod tests {
         let response = serde_json::json!({"results": ["a".repeat(500)]});
         let lines = tool_result_lines("search", &response);
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].starts_with("✓ search: "));
+        assert!(lines[0].starts_with("✅ search: "));
         assert!(lines[0].ends_with('…'));
         // ทั้งเส้นไม่ยาวกว่า prefix + 160 + ellipsis
-        assert!(lines[0].chars().count() < "✓ search: ".len() + 162);
+        assert!(lines[0].chars().count() < "✅ search: ".len() + 162);
     }
 
     #[test]
     fn tool_result_lines_plain_string_response() {
         let response = serde_json::json!("file saved");
         let lines = tool_result_lines("create_file", &response);
-        assert_eq!(lines, vec!["✓ create_file: file saved"]);
+        assert_eq!(lines, vec!["✅ create_file: file saved"]);
     }
 }
