@@ -180,7 +180,7 @@ Every interaction follows a deterministic path through the execution stack:
    - If a tool call fails, `adk-retry-reflect` intercepts the failure and retries up to three times with a reflection prompt (Ch. 6).
    - If delegation is required, root transfers execution to a specialist sub-agent (e.g., `researcher`, `coder`, or `media`) via `transfer_to_agent` (Ch. 15).
 4. **Streaming response:** Events stream back over SSE. The CLI (`src/cli.rs`) formats these events into visible output:
-   `tool:`, execution status (`✓ name`), streamed `answer:`, and final metrics (`thought 1.1s · tokens 6,523`).
+   `🛠️ tool:`, tool execution (`🔧 call`, `✅ name`), streamed `💬 answer:`, and final metrics on a new line (`💭 thought 1.1s · tokens 6,523`).
 
 ## 8. What Is Not There
 

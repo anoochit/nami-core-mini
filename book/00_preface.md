@@ -10,13 +10,7 @@ only in a design document.
 
 ### How to Read the Index
 
-Two states, and they mean exactly what they say:
-
-- **Linked** — written against the code as it stands today. Eighteen of the twenty chapters
-  are linked.
-- ***roadmap*** — the feature does not exist in this codebase, so the chapter does not exist
-  in this book: Ethical Agency, The Future. When I ship them, the chapters
-  ship with them.
+Every chapter in this book is linked and written directly against the code as it stands today. All twenty chapters describe real modules, configuration structures, and execution loops in `src/`.
 
 Sharp edges are part of the bargain. Where an implementation is weaker than its feature name
 suggests — a parameter that is parsed and ignored, a limit the model imposes that the config
@@ -43,10 +37,7 @@ discover it in production.
 - **Self-correction and compaction.** A failed tool call earns a reflection prompt and up to
   three retries; a long conversation gets summarised on a turn count so the beginning
   survives the end.
-- **Automation loops.** Interactive REPL workflows in `nami chat`: `/grill` to interrogate
-  fuzzy ideas into `GRILL.md`, `/plan` to decompose tasks into `PLAN.md`, and `/goal` to
-  run Ralph Wiggum autonomous execution loops with fresh contexts and dual verification
-  (deterministic shell exit codes or natural language evaluator turns).
+- **Automation loops & Custom Shortcuts.** Interactive REPL workflows in `nami chat`: `/grill` to interrogate fuzzy ideas into `GRILL.md`, `/plan` to decompose tasks into `PLAN.md`, `/goal` to run Ralph Wiggum autonomous execution loops with dual verification, and custom slash command prompt shortcuts configured in `nami.json` (`commands`).
 
 ### The Voice
 

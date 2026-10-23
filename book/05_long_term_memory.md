@@ -70,8 +70,7 @@ Three decisions live in that block, and each one was paid for with a bug:
   without the prefix it has no idea whether it is looking at project knowledge or a user
   message.
 
-Subdirectories are walked too, so `wiki/agent-learnings/pitfalls.md` indexes the same as
-`wiki/architecture.md`. Non-Markdown files are skipped silently.
+Subdirectories are walked too, so files in subfolders index the same as top-level files in `wiki/`. Non-Markdown files are skipped silently.
 
 ## 4. The Self-Update Loop
 

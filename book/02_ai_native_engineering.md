@@ -10,8 +10,10 @@ against `src/` and get a true answer from.
 
 `src/config.rs` turns `nami.json` into types, and it treats absence as a decision, not
 an accident. Every optional section carries `#[serde(default)]` — `server`, `cli`,
-`mcpServers`, `compaction`, `agents`, `media` — so an older config file keeps loading as
+`commands`, `mcpServers`, `compaction`, `agents`, `media` — so an older config file keeps loading as
 the program grows. If a section is missing, you get the documented default, not a crash.
+Custom prompt shortcuts are declared under `commands` (e.g., `/review`, `/summarize`), allowing
+users to configure reusable REPL prompt macros with argument substitution without recompiling.
 
 Validation is one rule deep, and the code says so itself:
 
@@ -97,7 +99,7 @@ can never drift from the roster that exists. One source of truth, generated pros
 
 ## 5. Three Altitudes of Tests
 
-`cargo test` runs 85 tests, 5 of them ignored; 14 of the 23 files in `src/` carry their
+`cargo test` runs 111 tests, 5 of them ignored; 14 of the 26 files in `src/` carry their
 own `#[cfg(test)]`. There is no `tests/` directory — a test lives in the file whose
 behaviour it pins.
 
@@ -166,15 +168,14 @@ re-check first.
 
 Honesty, again:
 
-- **No CI.** The 85 tests run when someone runs them. Nothing gates a commit.
+- **Automated Releases.** A multi-architecture release workflow runs on tag pushes
+  (`.github/workflows/release.yml`), building release archives for Linux, Windows, and macOS.
 - **No typed error taxonomy.** Every error is a string with context. Fast to write,
   impossible to match on — if a caller ever needs to branch on error *kind*, that is a
   refactor first.
 - **Validation is one rule deep.** Temperature and nothing else. Model ids, paths, and
   name collisions are not checked at startup.
-- **The tree is not uniformly clean.** Four pre-existing clippy warnings live in
-  `src/tools/filesystem.rs`. The discipline in section 2 is real, but it is maintained
-  by habit, and habits have edges.
+- **Clippy clean.** Running `cargo clippy` passes with zero warnings across the entire codebase.
 - **The mocks prove my side, not theirs.** The five live tests are the only proof the
   media pipeline matches Google's real API — and they are off by default and cost money.
 - **Bilingual comments have a cost too.** An English-only reader gets the what and loses

@@ -38,10 +38,9 @@
 - [Chapter 16: Custom Specialist Configuration](16_custom_specialists.md)
 - [Chapter 17: Automation Loops — Grill, Plan, Goal](17_automation_loops.md)
 - [Chapter 18: Security Guardrails](18_security_guardrails.md)
-- Chapter 19: Ethical Agency – The Nami Trust Protocol — *roadmap*
-- Chapter 20: The Future – From Assistant to Architect — *roadmap*
+- [Chapter 19: Ethical Agency – The Nami Trust Protocol](19_ethical_agency.md)
+- [Chapter 20: The Future – From Assistant to Architect](20_future_architect.md)
 
 ---
 
-Chapters marked *roadmap* describe features that are not implemented in the codebase yet and
-have not been written. Chapters that are linked correspond to real modules in `src/`.
+Every chapter in this book corresponds directly to real code, modules, and execution loops in `src/`.
