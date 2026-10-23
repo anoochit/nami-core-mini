@@ -2,5 +2,4 @@ adk-rust/*
 .env
 target/*
 nami.db
-# ผลลัพธ์ media generation (image/TTS/video) — สร้างโดย tool ห้าม commit
 /media/
