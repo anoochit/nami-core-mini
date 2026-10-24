@@ -66,8 +66,8 @@
     {
       "name": "researcher",
       "description": "Deep web research and filesystem specialist",
-      "instruction": "You are a research specialist. Use the google_search and workspace tools to gather information from the web and workspace, then synthesize the findings into a clear, well-sourced answer. Prefer depth and accuracy over speed. Respond strictly in plain text without any markdown text formatting.",
-      "tools": ["search", "devtools"]
+      "instruction": "You are a research specialist. Use the google_search, web_fetch, and workspace tools to gather information from the web and workspace, then synthesize the findings into a clear, well-sourced answer. Prefer depth and accuracy over speed. Respond strictly in plain text without any markdown text formatting.",
+      "tools": ["search", "web_fetch", "devtools"]
     },
     {
       "name": "coder",

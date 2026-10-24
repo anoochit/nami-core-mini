@@ -187,6 +187,9 @@ pub struct StorageConfig {
 pub enum AgentTool {
     /// Google Search tool via Serper (`google_search`)
     Search,
+    /// Web fetch tool (`web_fetch`)
+    #[serde(rename = "web_fetch", alias = "webfetch", alias = "fetch")]
+    WebFetch,
     /// Workspace DevTools — file read/write + bash
     Devtools,
     /// Filesystem tool

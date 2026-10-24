@@ -2,7 +2,7 @@ use crate::config::{AgentTool, NamiConfig};
 use crate::mcp::load_mcp_manager;
 use crate::tools::{
     create_datetime_tool, create_execute_command_tool, create_filesystem_toolset,
-    create_media_toolset, create_search_tool, create_weather_tool,
+    create_media_toolset, create_search_tool, create_weather_tool, create_web_fetch_tool,
 };
 use crate::workspace::WorkspaceGuard;
 use adk_devtools::{DevToolset, Workspace};
@@ -116,6 +116,7 @@ pub async fn build_nami_agent(
         for tool in &spec.tools {
             sub_builder = match tool {
                 AgentTool::Search => sub_builder.tool(create_search_tool()),
+                AgentTool::WebFetch => sub_builder.tool(create_web_fetch_tool()),
                 AgentTool::Devtools => sub_builder.toolset(Arc::new(build_dev_toolset(config))),
                 AgentTool::Filesystem => {
                     let fs_tools = create_filesystem_toolset(workspace_guard.clone());
@@ -187,6 +188,7 @@ pub async fn build_nami_agent(
         .tool(create_datetime_tool())
         .tool(create_weather_tool())
         .tool(create_search_tool())
+        .tool(create_web_fetch_tool())
         .tool(create_execute_command_tool(WorkspaceGuard::new(
             config.workspace.allowed_paths.clone(),
             config.workspace.read_only,
