@@ -66,13 +66,13 @@ pub fn resolve_executable(cmd: &str) -> String {
         }
 
         // Fallback สำหรับ Unix: ถ้าเรียก `python` แล้วไม่พบ ให้ลองหา `python3`
-        if cmd == "python" {
-            if let Some(path_var) = std::env::var_os("PATH") {
-                for dir in std::env::split_paths(&path_var) {
-                    let candidate = dir.join("python3");
-                    if candidate.is_file() {
-                        return candidate.to_string_lossy().into_owned();
-                    }
+        if cmd == "python"
+            && let Some(path_var) = std::env::var_os("PATH")
+        {
+            for dir in std::env::split_paths(&path_var) {
+                let candidate = dir.join("python3");
+                if candidate.is_file() {
+                    return candidate.to_string_lossy().into_owned();
                 }
             }
         }

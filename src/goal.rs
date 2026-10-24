@@ -403,14 +403,16 @@ pub fn extract_verification(text: &str) -> (bool, String) {
 pub async fn run_command_check(cmd: &str, timeout_secs: u64) -> CheckOutcome {
     #[cfg(target_os = "windows")]
     let mut command = {
-        let mut c = tokio::process::Command::new("cmd");
+        let bin = crate::mcp::resolve_executable("cmd");
+        let mut c = tokio::process::Command::new(bin);
         c.args(["/C", cmd]);
         c
     };
 
     #[cfg(not(target_os = "windows"))]
     let mut command = {
-        let mut c = tokio::process::Command::new("sh");
+        let bin = crate::mcp::resolve_executable("sh");
+        let mut c = tokio::process::Command::new(bin);
         c.args(["-c", cmd]);
         c
     };
