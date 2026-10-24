@@ -31,7 +31,77 @@ pub struct ListFilesParams {
     pub pattern: Option<String>,
 }
 
-/// สร้างเครื่องมือ filesystem ที่ประกอบด้วย read_file, write_file และ list_files พร้อม WorkspaceGuard
+#[derive(JsonSchema, Serialize, Deserialize)]
+pub struct ExecuteCommandParams {
+    /// Shell command to execute (e.g. "cargo check", "git status", "cargo test").
+    pub command: String,
+    /// Optional relative sub-directory path to execute the command in.
+    pub path: Option<String>,
+}
+
+/// สร้างเครื่องมือ execute_command เดี่ยว ๆ สำหรับใช้ร่วมกับ DevTools โดยไม่เกิดชื่อเครื่องมือซ้ำ
+pub fn create_execute_command_tool(guard: WorkspaceGuard) -> Arc<dyn Tool> {
+    let exec_tool = FunctionTool::new(
+        "execute_command",
+        "Execute a terminal shell command inside the workspace and return stdout, stderr, and exit code.",
+        move |_ctx, args| {
+            let g = guard.clone();
+            async move {
+                let cmd_str = match args.get("command").and_then(|v| v.as_str()) {
+                    Some(c) => c,
+                    None => return Ok(json!({ "error": "Missing required argument: command" })),
+                };
+
+                let sub_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                let work_dir = match g.validate_path(sub_path, true) {
+                    Ok(p) => p,
+                    Err(e) => return Ok(json!({ "error": e.to_string() })),
+                };
+
+                #[cfg(target_os = "windows")]
+                let mut command = {
+                    let bin = crate::mcp::resolve_executable("cmd");
+                    let mut c = tokio::process::Command::new(bin);
+                    c.args(["/C", cmd_str]);
+                    c
+                };
+
+                #[cfg(not(target_os = "windows"))]
+                let mut command = {
+                    let bin = crate::mcp::resolve_executable("sh");
+                    let mut c = tokio::process::Command::new(bin);
+                    c.args(["-c", cmd_str]);
+                    c
+                };
+
+                command.current_dir(work_dir);
+                command.stdout(std::process::Stdio::piped());
+                command.stderr(std::process::Stdio::piped());
+
+                let output = match command.output().await {
+                    Ok(out) => out,
+                    Err(e) => return Ok(json!({ "error": format!("Failed to execute command: {}", e) })),
+                };
+
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let exit_code = output.status.code().unwrap_or(-1);
+
+                Ok(json!({
+                    "success": output.status.success(),
+                    "exit_code": exit_code,
+                    "stdout": stdout,
+                    "stderr": stderr
+                }))
+            }
+        },
+    )
+    .with_parameters_schema::<ExecuteCommandParams>();
+
+    Arc::new(exec_tool)
+}
+
+/// สร้างเครื่องมือ filesystem ที่ประกอบด้วย read_file, write_file, list_files และ execute_command พร้อม WorkspaceGuard
 pub fn create_filesystem_toolset(guard: WorkspaceGuard) -> Vec<Arc<dyn Tool>> {
     let g_read = guard.clone();
     let read_tool = FunctionTool::new(
@@ -122,7 +192,7 @@ pub fn create_filesystem_toolset(guard: WorkspaceGuard) -> Vec<Arc<dyn Tool>> {
     )
     .with_parameters_schema::<WriteFileParams>();
 
-    let g_list = guard;
+    let g_list = guard.clone();
     let list_tool = FunctionTool::new(
         "list_files",
         "List files matching a glob pattern or in a sub-directory.",
@@ -166,9 +236,54 @@ pub fn create_filesystem_toolset(guard: WorkspaceGuard) -> Vec<Arc<dyn Tool>> {
     )
     .with_parameters_schema::<ListFilesParams>();
 
+    let exec_tool = create_execute_command_tool(guard);
+
     vec![
         Arc::new(read_tool),
         Arc::new(write_tool),
         Arc::new(list_tool),
+        exec_tool,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_filesystem_toolset_names() {
+        let guard = WorkspaceGuard::new(vec![std::path::PathBuf::from("./")], false).unwrap();
+        let tools = create_filesystem_toolset(guard);
+        let names: Vec<String> = tools.iter().map(|t| t.name().to_string()).collect();
+        assert_eq!(names, vec!["read_file", "write_file", "list_files", "execute_command"]);
+    }
+
+    #[tokio::test]
+    async fn test_execute_command_echo() {
+        let guard = WorkspaceGuard::new(vec![std::path::PathBuf::from("./")], false).unwrap();
+        let tools = create_filesystem_toolset(guard);
+        let exec_tool = tools.into_iter().find(|t| t.name() == "execute_command").unwrap();
+
+        let dummy_ctx = Arc::new(adk_rust::tool::SimpleToolContext::new("test"));
+        let res = exec_tool.execute(dummy_ctx, json!({ "command": "echo hello_nami_test" })).await.unwrap();
+
+        assert_eq!(res["success"], true, "Expected success in tool result: {:?}", res);
+        assert_eq!(res["exit_code"], 0);
+        let stdout = res["stdout"].as_str().unwrap();
+        assert!(stdout.contains("hello_nami_test"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_command_read_only_rejected() {
+        let guard = WorkspaceGuard::new(vec![std::path::PathBuf::from("./")], true).unwrap();
+        let tools = create_filesystem_toolset(guard);
+        let exec_tool = tools.into_iter().find(|t| t.name() == "execute_command").unwrap();
+
+        let dummy_ctx = Arc::new(adk_rust::tool::SimpleToolContext::new("test"));
+        let res = exec_tool.execute(dummy_ctx, json!({ "command": "echo hello" })).await.unwrap();
+
+        assert!(res.get("error").is_some());
+        let err = res["error"].as_str().unwrap();
+        assert!(err.contains("Read-Only mode"));
+    }
 }

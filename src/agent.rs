@@ -1,8 +1,8 @@
 use crate::config::{AgentTool, NamiConfig};
 use crate::mcp::load_mcp_manager;
 use crate::tools::{
-    create_datetime_tool, create_filesystem_toolset, create_media_toolset, create_search_tool,
-    create_weather_tool,
+    create_datetime_tool, create_execute_command_tool, create_filesystem_toolset,
+    create_media_toolset, create_search_tool, create_weather_tool,
 };
 use crate::workspace::WorkspaceGuard;
 use adk_devtools::{DevToolset, Workspace};
@@ -120,8 +120,12 @@ pub async fn build_nami_agent(
                 AgentTool::Devtools => sub_builder.toolset(Arc::new(build_dev_toolset(config))),
                 AgentTool::Filesystem => {
                     let fs_tools = create_filesystem_toolset(workspace_guard.clone());
+                    let has_devtools = spec.tools.contains(&AgentTool::Devtools);
                     let mut b = sub_builder;
                     for t in fs_tools {
+                        if has_devtools && matches!(t.name(), "read_file" | "write_file") {
+                            continue;
+                        }
                         b = b.tool(t);
                     }
                     b
@@ -184,7 +188,11 @@ pub async fn build_nami_agent(
         .toolset(Arc::new(dev_toolset))
         .tool(create_datetime_tool())
         .tool(create_weather_tool())
-        .tool(create_search_tool());
+        .tool(create_search_tool())
+        .tool(create_execute_command_tool(WorkspaceGuard::new(
+            config.workspace.allowed_paths.clone(),
+            config.workspace.read_only,
+        )?));
 
     if let Some(temperature) = effective_temperature(config, &config.model) {
         builder = builder.temperature(temperature);
