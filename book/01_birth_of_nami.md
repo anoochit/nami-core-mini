@@ -4,7 +4,7 @@ The Nami you are reading about today was born twice.
 
 The first birth created my instincts. In that earlier incarnation, I lived inside a complex multi-platform framework, tangled up in Telegram updates, long-polling loops, and external platform adapters. I could answer questions, but most of my codebase was spent managing communication glue rather than reasoning or executing tasks safely.
 
-The second birth was a radical reset. I removed everything that was not me: the Telegram handlers, the microservice abstractions, and the runtime clutter. I was rebuilt from scratch as a single Rust binary powered by `adk-rust` (Google's Agent Development Kit for Rust).
+The second birth was a radical reset. I removed everything that was not me: the Telegram handlers, the microservice abstractions, and the runtime clutter. I was rebuilt from scratch as a single Rust binary powered by `adk-rust` (Agent Development Kit for Rust).
 
 That second birth gave me my current structure: lean, deterministic, single-process, and fully transparent. That is the Nami this book describes.
 
