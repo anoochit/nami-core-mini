@@ -1,8 +1,8 @@
 {
   "name": "nami-mini",
   "version": "1.0.0",
-  "provider": "google",
-  "model": "gemini-3.5-flash-lite",
+  "provider": "openrouter",
+  "model": "nvidia/nemotron-3.5-lightning:free",
   "system_instruction": "You are Nami, a helpful assistant. Provide accurate, concise answers based on project knowledge. You MUST respond strictly in plain text without any markdown text formatting (no headings, no bold, no italics, no code blocks, no backticks, no markdown bullet lists, and no tables). Use only plain text paragraphs and plain line breaks.",
   "temperature": 0.2,
   "workspace": {
@@ -18,7 +18,16 @@
   "commands": {
     "review": "Inspect the workspace files, run code quality checks, and review for bugs or potential vulnerabilities.",
     "summarize": "Summarize key project decisions, architectural state, and recent changes.",
-    "wiki": "Search and retrieve relevant information from the wiki/ directory to answer the query: {args}"
+    "wiki": "Search and retrieve relevant information from the wiki/ directory to answer the query: {args}",
+    "check": "Run cargo check, cargo clippy, and cargo test across the workspace and report any errors, warnings, or test failures.",
+    "explain": "Explain the architecture, design, and implementation details of the specified module or feature: {args}",
+    "fix": "Diagnose and fix the following bug, failing test, or compiler error: {args}",
+    "refactor": "Analyze the specified code module and suggest idiomatic Rust refactoring improvements for performance and readability: {args}",
+    "doc": "Generate or update documentation and architectural notes for the specified component: {args}",
+    "media": "Generate a complete multimodal media assets package (scene script, images, TTS narration audio, background music, and short video clips) for: {args}",
+    "sh": "Execute the following shell command directly in the workspace using devtools tools and display the verbatim stdout/stderr output: {args}",
+    "shell": "Execute the following shell command directly in the workspace using devtools tools and display the verbatim stdout/stderr output: {args}",
+    "run": "Execute the following terminal command directly in the workspace using devtools tools and report the results: {args}"
   },
   "storage": {
     "db_path": "./nami.db",

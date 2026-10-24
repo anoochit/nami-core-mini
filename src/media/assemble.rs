@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 
 /// ตรวจว่า ffmpeg ใน PATH ใช้ได้ (`ffmpeg -version` exit 0)
 pub async fn ensure_ffmpeg() -> anyhow::Result<()> {
-    let ok = tokio::process::Command::new("ffmpeg")
+    let ffmpeg_cmd = crate::mcp::resolve_executable("ffmpeg");
+    let ok = tokio::process::Command::new(&ffmpeg_cmd)
         .arg("-version")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -182,7 +183,8 @@ pub async fn run_ffmpeg(
 ) -> anyhow::Result<()> {
     use tokio::io::AsyncReadExt;
 
-    let mut child = tokio::process::Command::new("ffmpeg")
+    let ffmpeg_cmd = crate::mcp::resolve_executable("ffmpeg");
+    let mut child = tokio::process::Command::new(&ffmpeg_cmd)
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

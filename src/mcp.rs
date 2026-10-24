@@ -5,6 +5,82 @@ use adk_rust::tool::mcp::{McpAuth, McpHttpClientBuilder, McpToolset};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// ค้นหาและตรวจสอบ path ของ executable แบบ cross-platform (Windows, Linux, macOS)
+///
+/// ป้องกันปัญหา `program not found` เมื่อรัน subprocess Tool / MCP / DevTools:
+/// - Windows: ค้นหาใน PATH ร่วมกับ PATHEXT (เช่น `.exe`, `.cmd`, `.bat`) หากไม่ระบุนามสกุล
+/// - Linux/macOS: ค้นหาใน PATH และจัดการ fallback สำหรับคำสั่งยอดนิยม เช่น `python` -> `python3`
+pub fn resolve_executable(cmd: &str) -> String {
+    let path = std::path::Path::new(cmd);
+    // ถ้าระบุ absolute path หรือ path ที่มี separator อยู่แล้ว ให้ใช้ค่าเดิม
+    if path.is_absolute() || cmd.contains('/') || cmd.contains('\\') {
+        return cmd.to_string();
+    }
+
+    if cfg!(windows) {
+        let has_ext = path.extension().is_some();
+        let pathext_var =
+            std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+        let extensions: Vec<&str> = if has_ext {
+            vec![""]
+        } else {
+            pathext_var.split(';').collect()
+        };
+
+        if let Some(path_var) = std::env::var_os("PATH") {
+            for dir in std::env::split_paths(&path_var) {
+                for ext in &extensions {
+                    let file_name = if ext.is_empty() {
+                        cmd.to_string()
+                    } else if ext.starts_with('.') {
+                        format!("{}{}", cmd, ext)
+                    } else {
+                        format!("{}.{}", cmd, ext)
+                    };
+                    let candidate = dir.join(&file_name);
+                    if candidate.is_file() {
+                        return candidate.to_string_lossy().into_owned();
+                    }
+                }
+            }
+        }
+
+        // Fallback บน Windows สำหรับ CLI tools ของ Node/Python หากหาใน PATH ไม่พบ
+        if !has_ext
+            && matches!(
+                cmd,
+                "npx" | "npm" | "pnpm" | "yarn" | "corepack" | "tsx" | "bunx" | "uvx"
+            )
+        {
+            return format!("{}.cmd", cmd);
+        }
+    } else {
+        // Linux & macOS: ค้นหาใน PATH
+        if let Some(path_var) = std::env::var_os("PATH") {
+            for dir in std::env::split_paths(&path_var) {
+                let candidate = dir.join(cmd);
+                if candidate.is_file() {
+                    return candidate.to_string_lossy().into_owned();
+                }
+            }
+        }
+
+        // Fallback สำหรับ Unix: ถ้าเรียก `python` แล้วไม่พบ ให้ลองหา `python3`
+        if cmd == "python" {
+            if let Some(path_var) = std::env::var_os("PATH") {
+                for dir in std::env::split_paths(&path_var) {
+                    let candidate = dir.join("python3");
+                    if candidate.is_file() {
+                        return candidate.to_string_lossy().into_owned();
+                    }
+                }
+            }
+        }
+    }
+
+    cmd.to_string()
+}
+
 /// โหลดและเริ่ม MCP Servers แบบ stdio (มี `command`) จากคีย์ `mcpServers`
 ///
 /// คืนค่า `Some(manager)` เมื่อมี stdio server และสร้าง Manager สำเร็จ
@@ -27,18 +103,14 @@ pub async fn load_mcp_manager(
         }
     };
 
-    // บน Windows คำสั่งแบบ .cmd (เช่น npx) ต้องระบุนามสกุลไฟล์ให้ชัดเจน
-    // มิฉะนั้น tokio::process::Command จะค้นหาไฟล์ไม่พบ
-    if cfg!(windows) {
-        for (id, config) in manager.all_configs().await {
-            let needs_extension = !config.command.contains('.')
-                && matches!(config.command.as_str(), "npx" | "npm" | "pnpm" | "yarn");
-            if needs_extension {
-                let mut replacement = config.clone();
-                replacement.command = format!("{}.cmd", config.command);
-                if let Err(err) = manager.update_server(&id, replacement).await {
-                    tracing::warn!("Unable to adjust command of MCP Server [{}]: {}", id, err);
-                }
+    // ปรับแก้ command ของ MCP Server แต่ละตัวให้รองรับ cross-platform (Windows, Linux, macOS)
+    for (id, config) in manager.all_configs().await {
+        let resolved = resolve_executable(&config.command);
+        if resolved != config.command {
+            let mut replacement = config.clone();
+            replacement.command = resolved;
+            if let Err(err) = manager.update_server(&id, replacement).await {
+                tracing::warn!("Unable to adjust command of MCP Server [{}]: {}", id, err);
             }
         }
     }
@@ -97,4 +169,28 @@ async fn connect_remote_server(
         builder = builder.with_auth(McpAuth::bearer(token.clone()));
     }
     Ok(builder.connect().await?.with_name(id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_executable_preserves_absolute_paths() {
+        let abs = if cfg!(windows) {
+            "C:\\bin\\tool.exe"
+        } else {
+            "/usr/bin/tool"
+        };
+        assert_eq!(resolve_executable(abs), abs);
+    }
+
+    #[test]
+    fn test_resolve_executable_resolves_common_cmd() {
+        let res = resolve_executable("npx");
+        assert!(!res.is_empty());
+        if cfg!(windows) {
+            assert!(res.to_lowercase().ends_with(".cmd") || res.to_lowercase().ends_with(".exe"));
+        }
+    }
 }
