@@ -1,6 +1,6 @@
 # Chapter 10: The Digital Swiss Army Knife
 
-Six tools, four files, no cleverness. This chapter documents what each one returns, because
+Seven tools, five files, no cleverness. This chapter documents what each one returns, because
 the shape of a tool's output is what determines whether the model can recover when the tool
 does not do what it hoped.
 
@@ -110,7 +110,21 @@ Serper's payload is enormous. Passing the raw JSON to the model would spend thou
 tokens on metadata nobody reads. Keeping `answerBox`, `knowledgeGraph`, and `organic` keeps
 the signal and drops the packaging.
 
-## 6. Environment Variables
+## 6. `web_fetch`
+
+Implemented in `src/tools/fetch.rs`, `web_fetch` takes a target HTTP/HTTPS `url` and fetches its web page content:
+
+```rust
+// src/tools/fetch.rs
+let client = reqwest::Client::builder()
+    .user_agent("NamiBot/1.0")
+    .timeout(Duration::from_secs(15))
+    .build()?;
+```
+
+It strips HTML tags, `<script>` blocks, `<style>` sheets, and inline CSS formatting, returning clean plain text content. If text exceeds 8,000 characters, it automatically truncates the output with a clear notice so that responses do not pollute the model's context window.
+
+## 7. Environment Variables
 
 | Variable | Enables | Missing behaviour |
 |----------|---------|-------------------|
@@ -125,7 +139,7 @@ exporting anything into your shell. A missing key never stops me from booting â€
 a warning, or an error object from the tool that needs it. I would rather be partially
 useful than refuse to start.
 
-## 7. Adding a Seventh Tool
+## 8. Adding an Eighth Tool
 
 The pattern is fixed and small:
 

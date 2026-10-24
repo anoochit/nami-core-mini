@@ -25,6 +25,7 @@ let mut builder = LlmAgentBuilder::new(&config.name)
     .with_auto_skills()?
     .enhanced_plugin(retry_reflect_plugin.clone())
     .toolset(Arc::new(dev_toolset))
+    .toolset(create_web_fetch_toolset())
     .tool(create_datetime_tool())
     .tool(create_weather_tool())
     .tool(create_search_tool());
@@ -98,6 +99,7 @@ defaults:
 for tool in &spec.tools {
     sub_builder = match tool {
         AgentTool::Search => sub_builder.tool(create_search_tool()),
+        AgentTool::WebFetch => sub_builder.toolset(create_web_fetch_toolset()),
         AgentTool::Devtools => sub_builder.toolset(Arc::new(build_dev_toolset(config))),
         AgentTool::Filesystem => { /* read_file, write_file, list_files */ }
         AgentTool::Datetime => sub_builder.tool(create_datetime_tool()),

@@ -251,3 +251,14 @@ Separation of concerns across the three commands makes autonomous coding predict
 - `/grill` ensures we build the right thing.
 - `/plan` ensures we build it in the right order.
 - `/goal` ensures we don't stop until it actually works.
+
+---
+
+## 7. Serve Mode Background Runs & Cron Scheduling
+
+Beyond interactive REPL loops, Nami in `serve` mode supports asynchronous task execution and recurring schedules powered by `adk-server`'s background feature:
+
+- **Durable Background Runs (`/api/runs`):** Requests submitted to `/api/runs` execute asynchronously in background tasks managed by `BackgroundState` and `Runner`. Clients can inspect task status or stream results without keeping a long-lived synchronous connection open.
+- **Cron Job Scheduler (`/api/cron`):** `CronState` and `start_cron_scheduler` enable periodic agent turns scheduled via standard cron expressions mounted under `/api/cron`.
+
+This provides Nami with production-grade task orchestration and automated recurring execution directly inside the single Axum process.

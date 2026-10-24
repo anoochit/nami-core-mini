@@ -80,7 +80,7 @@ To understand how requests flow through Nami, consider the system architecture a
 
 The system architecture is divided into four distinct operational layers:
 
-1. **Transport Layer (`src/server.rs`, `src/api_client.rs`):** An Axum HTTP server listening on a single port. It serves static assets for the Web UI at `/ui/` and handles streaming API turns via Server-Sent Events (SSE). CLI subcommands (`nami chat`, `nami ask`) act as HTTP clients to this server.
+1. **Transport Layer (`src/server.rs`, `src/api_client.rs`):** An Axum HTTP server listening on a single port. It serves static assets for the Web UI at `/ui/`, handles streaming API turns via Server-Sent Events (SSE), and manages background runs (`/api/runs`) and cron scheduling (`/api/cron`). CLI subcommands (`nami chat`, `nami ask`) act as HTTP clients to this server.
 2. **Orchestration Core (`src/agent.rs`):** Powered by `adk-rust`. The root agent (`nami-mini`) evaluates incoming prompts, manages context assembly, and applies `adk-retry-reflect` to automatically recover from failed tool executions.
 3. **Execution & Delegation Layer (`src/tools/`, `src/mcp.rs`):** When tasks require specialized skills, the root agent delegates work to specialist sub-agents (`researcher`, `coder`, `reviewer`, `tester`, `media`) using `transfer_to_agent`. Tool calls operate inside a security sandbox governed by `WorkspaceGuard`.
 4. **Persistence & Knowledge Base (`src/memory.rs`):** Session conversation history and long-term memory reside in a single local SQLite file (`nami.db`). Markdown files in `wiki/` are scanned and indexed into memory at every system startup.
@@ -130,13 +130,13 @@ The entire system in `src/` is composed of fourteen modules across twenty-six `.
 | --- | --- |
 | `config` | Deserializes `nami.json` into `NamiConfig`, handles defaults, and validates rules (Ch. 2). |
 | `agent` | Assembles root + specialist sub-agents, skills, and retry/reflection plugins (Ch. 3, 15–16). |
-| `server` | Configures Axum routes (`/api`, `/ui/`), manages health checks, and handles graceful shutdown. |
+| `server` | Configures Axum routes (`/api`, `/ui/`), background runs (`/api/runs`), cron jobs (`/api/cron`), health checks, and graceful shutdown. |
 | `api_client` | The SSE-speaking HTTP client that powers CLI interactions. |
 | `cli` | Interactive REPL, command parsing, and stream output rendering. |
 | `memory` | Manages the SQLite store (`nami.db`) for sessions and indexes `wiki/` Markdown docs (Ch. 5). |
 | `compaction` | Triggers post-turn conversation history summarization (Ch. 14). |
 | `mcp` | Manages stdio subprocesses and remote HTTP MCP toolsets (Ch. 12). |
-| `tools` | Built-in function tools: datetime, weather, search, and filesystem (Ch. 9–10). |
+| `tools` | Built-in function tools: datetime, weather, search, fetch (web HTML plain text), and filesystem (Ch. 9–10). |
 | `workspace` | Enforces path confinement through `WorkspaceGuard` (Ch. 18). |
 | `media` | Orchestrates image generation, TTS voiceover, music, video synthesis, and FFmpeg assembly (Ch. 11). |
 | `grill` | Interactive REPL command (`/grill`) to interrogate fuzzy ideas into structured `GRILL.md` (Ch. 17). |

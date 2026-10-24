@@ -14,6 +14,7 @@ an accident. Every optional section carries `#[serde(default)]` — `server`, `c
 the program grows. If a section is missing, you get the documented default, not a crash.
 Custom prompt shortcuts are declared under `commands` (e.g., `/review`, `/summarize`, `/wiki`, `/post`), allowing
 users to configure reusable REPL prompt macros with argument substitution without recompiling.
+The `cli` section supports options such as `show_tool_call`, `show_tool_result`, and `show_thinking`, allowing users to control stream visibility in REPL turns, whereas `ask` mode formats output strictly as answer text.
 
 Validation is one rule deep, and the code says so itself:
 
