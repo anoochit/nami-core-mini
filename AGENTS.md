@@ -18,12 +18,12 @@ This document serves as the authoritative operational guide for AI agents (and h
 
 ## 2. Repository Structure & Module Map
 
-The core implementation consists of **14 modules across 26 `.rs` files** under `src/`:
+The core implementation consists of **14 modules across 27 `.rs` files** under `src/`:
 
 ```text
 nami-core-mini/
 ├── Cargo.toml                # Dependencies (adk-rust 2.3.0, axum 0.8, tokio, etc.)
-├── nami.json                 # Primary configuration (system instructions, sub-agents, MCP, shortcuts)
+├── nami.json                 # Primary configuration (system instructions, sub-agents, MCP, shortcuts, CLI toggles)
 ├── .env.example              # Template environment variables (GOOGLE_API_KEY, PORT, RUST_LOG)
 ├── .skills/                  # Auto-injected skills (code-reviewer, multimodal-pipeline)
 ├── wiki/                     # Plain-text Markdown knowledge base indexed into SQLite on boot
@@ -35,7 +35,7 @@ nami-core-mini/
     ├── api_client.rs         # SSE-speaking HTTP client powering CLI surfaces
     ├── cli.rs                # Interactive REPL, prompt parsing, custom shortcuts, SSE rendering
     ├── config.rs             # NamiConfig deserialization, defaults, and validation
-    ├── server.rs             # Axum HTTP server wrapper (/api, /ui/), health checks, graceful shutdown
+    ├── server.rs             # Axum HTTP server wrapper (/api, /ui/, /api/runs, /api/cron), health checks, graceful shutdown
     ├── memory.rs             # NamiMemory SQLite session service and wiki Markdown indexer
     ├── workspace.rs          # WorkspaceGuard path confinement and read-only sandboxing
     ├── compaction.rs         # Conversation history compaction trigger configuration
@@ -44,7 +44,7 @@ nami-core-mini/
     ├── plan.rs               # Interactive /plan REPL command for task decomposition into PLAN.md
     ├── goal.rs               # Interactive /goal REPL command for autonomous Ralph Wiggum loops
     ├── media/                # Multimodal generation tools (image, TTS, music, video, FFmpeg)
-    └── tools/                # Built-in toolsets (filesystem, google_search, weather, datetime)
+    └── tools/                # Built-in toolsets (filesystem, google_search, web_fetch, weather, datetime)
 ```
 
 ---
@@ -60,7 +60,7 @@ cargo check
 # 2. Lint check (must pass with 0 warnings)
 cargo clippy
 
-# 3. Test suite execution (111+ tests)
+# 3. Test suite execution (128+ tests)
 cargo test
 
 # 4. Running Nami locally
@@ -76,6 +76,7 @@ cargo run -- serve --port 8080          # Run HTTP API & Web UI on port 8080
 All runtime identity and agent capabilities are declared in `nami.json`:
 
 - **`system_instruction`:** Defines root agent persona and mandates plain text output without markdown.
+- **`cli`:** Output streaming visibility controls (`show_tool_call`, `show_tool_result`, `show_thinking`).
 - **`commands`:** Configurable custom slash command shortcuts in the REPL (e.g., `/review`, `/summarize`). Supports optional `{args}` placeholders or context appending.
 - **`agents`:** Array of specialist sub-agents (`researcher`, `coder`, `reviewer`, `tester`, `media`) invoked via `transfer_to_agent`.
 - **`workspace`:** `allowed_paths` array and `read_only` boolean enforced by `WorkspaceGuard`.

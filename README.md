@@ -13,12 +13,13 @@ Nami Mini is an advanced AI assistant and autonomous agent framework built in Ru
 
 2. **Rich Tooling & Ecosystem Integration (`src/tools/`)**
    - **Devtools & Filesystem:** Sandboxed file reading/writing, directory traversal, and command execution governed by `WorkspaceGuard`.
-   - **Web Search & Data:** Google search integration (`google_search`), date/time utilities, and weather forecasting.
+   - **Web Search & Data:** Google search integration (`google_search`), Web HTML plain-text extractor (`web_fetch`), date/time utilities, and weather forecasting.
    - **Model Context Protocol (MCP):** Full support for both Stdio subprocess servers and remote streamable HTTP MCP endpoints (`src/mcp.rs`).
 
-3. **Persistent Memory & Session Management (`src/memory.rs`, `src/workspace.rs`)**
+3. **Persistent Memory & Background Server (`src/memory.rs`, `src/server.rs`)**
    - SQLite-backed state storage (`adk-session`, `adk-memory`) for multi-turn conversations and long-term agent recall.
-   - Dual-mode operation: Interactive CLI chat (`chat`, `ask`) and a high-performance HTTP server (`serve`) built with Axum (`src/server.rs`).
+   - High-performance HTTP server (`serve`) built with Axum (`src/server.rs`) exposing SSE streams, Web UI (`/ui/`), durable background runs (`/api/runs`), and scheduled cron jobs (`/api/cron`).
+   - CLI modes (`chat`, `ask`) supporting configurable output visibility (`show_tool_call`, `show_tool_result`, `show_thinking`) and clean answer-only ask responses.
 
 4. **Advanced Context Compaction (`src/compaction.rs`)**
    - Post-run conversation history compaction to maintain efficient context windows over long interaction sessions.
@@ -37,7 +38,7 @@ Nami Mini is an advanced AI assistant and autonomous agent framework built in Ru
 
 ```text
 ├── Cargo.toml                # Rust dependencies and workspace configuration
-├── nami.json                 # Agent configuration, sub-agents, tools, and MCP servers
+├── nami.json                 # Agent configuration, sub-agents, tools, MCP servers, and CLI toggles
 ├── .skills/                  # Automatic skill definitions (code-reviewer, multimodal-pipeline)
 ├── src/
 │   ├── main.rs               # CLI entrypoint and subcommand dispatcher
@@ -45,7 +46,7 @@ Nami Mini is an advanced AI assistant and autonomous agent framework built in Ru
 │   ├── api_client.rs         # SSE-speaking HTTP client for CLI surfaces
 │   ├── cli.rs                # Interactive REPL, prompt parsing, and stream rendering
 │   ├── config.rs             # Configuration structs and validation logic
-│   ├── server.rs             # Axum HTTP server, static UI routes, and API endpoints
+│   ├── server.rs             # Axum HTTP server, static UI routes, background runs, and cron jobs
 │   ├── memory.rs             # SQLite memory adapter and wiki Markdown knowledge indexer
 │   ├── workspace.rs          # Security guard for file operations and sandboxing
 │   ├── compaction.rs         # Context window compaction logic
@@ -54,7 +55,7 @@ Nami Mini is an advanced AI assistant and autonomous agent framework built in Ru
 │   ├── plan.rs               # Interactive /plan REPL command for task decomposition
 │   ├── goal.rs               # Interactive /goal REPL command for autonomous loops
 │   ├── media/                # Multimedia generation, assembly, and manifests
-│   └── tools/                # Built-in toolsets (filesystem, search, weather, etc.)
+│   └── tools/                # Built-in toolsets (filesystem, search, fetch, weather, datetime)
 ├── book/                     # Comprehensive conceptual guide & architecture chapters
 └── wiki/                     # Spikes, implementation plans, and feature comparisons
 ```
@@ -70,7 +71,7 @@ Nami Mini is an advanced AI assistant and autonomous agent framework built in Ru
 
 ### Configuration
 
-Edit `nami.json` to configure model names, system instructions, enabled tools, MCP servers, and media generation options.
+Edit `nami.json` to configure model names, system instructions, enabled tools, MCP servers, CLI display toggles (`show_tool_call`, `show_tool_result`, `show_thinking`), and media generation options.
 
 ### Running Nami Mini
 
