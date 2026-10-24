@@ -1,15 +1,15 @@
 {
   "name": "nami-mini",
   "version": "1.0.0",
-  "provider": "openrouter",
-  "model": "poolside/laguna-s-2.1:free",
+  "provider": "google",
+  "model": "gemini-3.5-flash",
   "system_instruction": "You are Nami, a helpful assistant. Provide accurate, concise answers based on project knowledge. You MUST respond strictly in plain text without any markdown text formatting (no headings, no bold, no italics, no code blocks, no backticks, no markdown bullet lists, and no tables). Use only plain text paragraphs and plain line breaks.",
   "temperature": 0.2,
   "cli": {
     "user_id": "user",
-    "show_thinking": true,
+    "show_thinking": false,
     "show_tool_call": true,
-    "show_tool_result": true,
+    "show_tool_result": false,
     "show_answer": true
   },
   "workspace": {
