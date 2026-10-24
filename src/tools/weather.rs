@@ -10,7 +10,7 @@ pub struct WeatherParams {
     pub location: String,
 }
 
-/// Tool สำหรับดึงข้อมูลสภาพอากาศแบบเรียลไทม์จาก wttr.in
+/// Tool for retrieving real-time weather information from wttr.in
 pub fn create_weather_tool() -> Arc<dyn Tool> {
     let tool = FunctionTool::new(
         "get_weather_forecast",

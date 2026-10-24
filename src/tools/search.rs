@@ -12,10 +12,10 @@ pub struct SearchParams {
     pub num: Option<u8>,
 }
 
-/// Tool สำหรับค้นหา Google ผ่าน Serper.dev API (ต้องตั้ง `SERPER_API_KEY` ใน environment)
+/// Tool for Google search via Serper.dev API (requires `SERPER_API_KEY` set in environment).
 ///
-/// คืนเฉพาะผลลัพธ์ที่ใช้กับ agent ได้ (`organic`, `answerBox`, `knowledgeGraph`)
-/// แทนการส่ง payload ดิบทั้งหมด เพื่อลด token ที่ไม่จำเป็น
+/// Returns only agent-relevant results (`organic`, `answerBox`, `knowledgeGraph`)
+/// instead of raw response payloads to minimize token overhead.
 pub fn create_search_tool() -> Arc<dyn Tool> {
     let tool = FunctionTool::new(
         "google_search",
@@ -40,7 +40,7 @@ pub fn create_search_tool() -> Arc<dyn Tool> {
                 return Ok(json!({ "error": "Missing required argument: query" }));
             }
 
-            // จำกัดช่วง num ที่ 1-10 และใช้ค่าเริ่มต้น 5
+            // Clamp num to range 1-10 with a default of 5
             let num = args
                 .get("num")
                 .and_then(|v| v.as_u64())

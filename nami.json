@@ -34,7 +34,9 @@
     "media": "Generate a complete multimodal media assets package (scene script, images, TTS narration audio, background music, and short video clips) for: {args}",
     "sh": "Execute the following shell command directly in the workspace using devtools tools and display the verbatim stdout/stderr output: {args}",
     "shell": "Execute the following shell command directly in the workspace using devtools tools and display the verbatim stdout/stderr output: {args}",
-    "run": "Execute the following terminal command directly in the workspace using devtools tools and report the results: {args}"
+    "run": "Execute the following terminal command directly in the workspace using devtools tools and report the results: {args}",
+    "post": "Create an engaging social network post adapted for platforms like LinkedIn, X, or Facebook based on the provided content or URL: {args}",
+    "social": "Create an engaging social network post adapted for platforms like LinkedIn, X, or Facebook based on the provided content or URL: {args}"
   },
   "storage": {
     "db_path": "./nami.db",

@@ -1,19 +1,19 @@
-//! Phase 7: การประกอบไฟล์ media ด้วย ffmpeg (local — ไม่มี API call)
+//! Phase 7: Media file assembly with ffmpeg (local — no API calls)
 //!
-//! ทำสองอย่าง:
-//! 1. **assembly** — ประกอบวิดีโอ + narration (+ music) เป็น MP4 สุดท้าย
-//!    (video duration เป็น master: เสียงถูก pad/cut ให้ตรงด้วย `apad` + `-shortest`)
-//! 2. **conversion** — แปลง WAV ของ TTS เป็น mp3 (libmp3lame) ตาม
-//!    `output_format` ของ `generate_tts`
+//! Handles two main tasks:
+//! 1. **assembly** — Combines video + narration (+ music) into final MP4
+//!    (video duration is master: audio is padded/cut to match via `apad` + `-shortest`)
+//! 2. **conversion** — Converts TTS WAV files to mp3 (libmp3lame) based on
+//!    `output_format` of `generate_tts`
 //!
-//! ffmpeg ต้องอยู่ใน PATH ของเครื่อง (`ffmpeg -version` ผ่าน = ใช้ได้) —
-//! ถ้าไม่มี tool จะคืน error บอกให้ติดตั้ง ไม่ทำให้整个 pipeline พัง
+//! ffmpeg must be available in system PATH (`ffmpeg -version` must succeed).
+//! If absent, the tool returns an error instructing installation without crashing the pipeline.
 
 use anyhow::{Context, bail};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-/// ตรวจว่า ffmpeg ใน PATH ใช้ได้ (`ffmpeg -version` exit 0)
+/// Check if ffmpeg in PATH is usable (`ffmpeg -version` exits 0)
 pub async fn ensure_ffmpeg() -> anyhow::Result<()> {
     let ffmpeg_cmd = crate::mcp::resolve_executable("ffmpeg");
     let ok = tokio::process::Command::new(&ffmpeg_cmd)
@@ -34,30 +34,30 @@ pub async fn ensure_ffmpeg() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// ข้อมูล inputs สำหรับ build ffmpeg args (assembly)
+/// Input data for building ffmpeg command arguments (assembly)
 pub struct AssembleInputs<'a> {
-    /// วิดีโอต้นฉบับ — จะเป็น input index 0 และ duration master ของ output
+    /// Original video — input index 0 and output master duration
     pub video: &'a Path,
-    /// narration/voiceover (input index 1 ถ้ามี)
+    /// narration/voiceover (input index 1 if present)
     pub narration: Option<&'a Path>,
-    /// background music (input index 2 ถ้ามี narration ด้วย, ไม่งั้น 1)
+    /// background music (input index 2 if narration exists, otherwise 1)
     pub music: Option<&'a Path>,
-    /// ระดับเสียง music 0.0–1.0 (ค่า default เมื่อ mix กับ source อื่น = 0.3)
+    /// Music volume level 0.0–1.0 (default when mixed with other sources = 0.3)
     pub music_volume: f32,
-    /// เก็บเสียงเดิมของวิดีโอ (`0:a`) ไว้ใน mix ด้วยหรือไม่
+    /// Whether to preserve original video audio (`0:a`) in the mix
     pub keep_video_audio: bool,
-    /// output mp4 path
+    /// Output MP4 path
     pub output: &'a Path,
 }
 
-/// สร้าง argv ของ ffmpeg จาก inputs (pure function — ทดสอบได้ไม่ต้องรัน ffmpeg)
+/// Generate ffmpeg argv from inputs (pure function — testable without executing ffmpeg)
 ///
-/// กลยุทธ์:
-/// - audio source เดียว → map ตรง ๆ ไม่ใช้ filter (`-af` ใส่ volume/apad ได้)
-/// - หลาย source → `filter_complex` + `amix` แล้ว map `[a]`
-/// - ทุกกรณี: `-c:v copy` (video ไม่ re-encode) + `apad` + `-shortest`
-///   = วิดีโอเป็น master duration (เสียงยาวกว่าถูกตัด, สั้นกว่าถูก pad)
-/// - `-movflags +faststart` สำหรับการเล่น MP4 บนเว็บ
+/// Strategy:
+/// - Single audio source → direct mapping without filter (`-af` applies volume/apad)
+/// - Multiple sources → `filter_complex` + `amix` then map `[a]`
+/// - All cases: `-c:v copy` (no video re-encoding) + `apad` + `-shortest`
+///   = Video is master duration (longer audio is trimmed, shorter is padded)
+/// - `-movflags +faststart` for web playback of MP4 files
 pub fn build_ffmpeg_args(inputs: &AssembleInputs<'_>) -> Vec<String> {
     let mut args: Vec<String> = vec!["-hide_banner".into(), "-y".into()];
     args.push("-i".into());
@@ -71,29 +71,29 @@ pub fn build_ffmpeg_args(inputs: &AssembleInputs<'_>) -> Vec<String> {
         args.push(m.display().to_string());
     }
 
-    // ลำดับ input: video=0, narration=1 (ถ้ามี), music=narration?2:1
+    // Input index ordering: video=0, narration=1 (if present), music=narration?2:1
     let music_idx = if inputs.narration.is_some() { 2 } else { 1 };
 
-    // จำนวน audio sources ที่จะ mix
+    // Number of audio sources to mix
     let sources_count = usize::from(inputs.keep_video_audio)
         + usize::from(inputs.narration.is_some())
         + usize::from(inputs.music.is_some());
 
     match sources_count {
         0 => {
-            // ไม่มีเสียงเลย — map เฉพาะวิดีโอ
+            // No audio at all — map video only
             args.push("-map".into());
             args.push("0:v".into());
         }
         1 if inputs.keep_video_audio => {
-            // เสียงเดิมของวิดีโอ — `0:a?` เผื่อคลิปที่ไม่มี audio stream
+            // Original video audio — `0:a?` in case video lacks an audio stream
             args.push("-map".into());
             args.push("0:v".into());
             args.push("-map".into());
             args.push("0:a?".into());
         }
         1 => {
-            // narration หรือ music เดียว — map input ตรง ๆ ไม่ต้อง amix
+            // Single narration or music — direct input mapping without amix
             let idx = if inputs.music.is_some() { music_idx } else { 1 };
             args.push("-map".into());
             args.push("0:v".into());
@@ -101,7 +101,7 @@ pub fn build_ffmpeg_args(inputs: &AssembleInputs<'_>) -> Vec<String> {
             args.push(format!("{idx}:a"));
         }
         _ => {
-            // หลาย source — filter_complex + amix (labels ทุกตัวเป็น [..])
+            // Multiple sources — filter_complex + amix (all labels formatted as [..])
             let mut chain_labels: Vec<String> = Vec::new();
             if inputs.keep_video_audio {
                 chain_labels.push("[0:a]".into());
@@ -132,7 +132,7 @@ pub fn build_ffmpeg_args(inputs: &AssembleInputs<'_>) -> Vec<String> {
         }
     }
 
-    // เสียงเดียว (ไม่มี filter_complex) ต้อง apply volume/apad ผ่าน -af
+    // Single source (no filter_complex) applies volume/apad via -af
     if sources_count <= 1
         && sources_count > 0
         && (inputs.music.is_some() || inputs.narration.is_some())
@@ -150,14 +150,14 @@ pub fn build_ffmpeg_args(inputs: &AssembleInputs<'_>) -> Vec<String> {
     args.push("copy".into());
     args.push("-c:a".into());
     args.push("aac".into());
-    args.push("-shortest".into()); // จบเมื่อวิดีโอจบ (master)
+    args.push("-shortest".into()); // End when video ends (master)
     args.push("-movflags".into());
     args.push("+faststart".into());
     args.push(inputs.output.display().to_string());
     args
 }
 
-/// สร้าง argv สำหรับแปลงไฟล์เสียงเป็น mp3 (libmp3lame quality 2 ≈ 190 kbps)
+/// Build argv for audio conversion to mp3 (libmp3lame quality 2 ≈ 190 kbps)
 pub fn build_mp3_args(input: &Path, output: &Path) -> Vec<String> {
     vec![
         "-hide_banner".into(),
@@ -172,10 +172,10 @@ pub fn build_mp3_args(input: &Path, output: &Path) -> Vec<String> {
     ]
 }
 
-/// รัน ffmpeg ด้วย args ที่เตรียมไว้ — poll ทุก 300ms เพื่อเช็ค cancel + timeout
+/// Execute ffmpeg with prepared args — polling every 300ms to check cancellation and timeout
 ///
-/// stderr ถูก drain ตลอด (pipe buffer เต็ม = ffmpeg ค้าง) และเก็บ 32KB แรก
-/// ไว้เป็นบริบทตอน error
+/// stderr is continuously drained (full pipe buffer causes ffmpeg deadlock) and initial 32KB
+/// is kept as error context.
 pub async fn run_ffmpeg(
     args: &[String],
     timeout: Duration,
@@ -193,7 +193,7 @@ pub async fn run_ffmpeg(
         .spawn()
         .context("cannot spawn ffmpeg")?;
 
-    // drain stderr ต่อเนื่อง — คืนเป็น 32KB แรก ( buffer เต็มก็ทิ้งส่วนเกิน)
+    // Continuously drain stderr — return first 32KB (discard excess if buffer full)
     let mut stderr = child.stderr.take().context("cannot take ffmpeg stderr")?;
     let stderr_task = tokio::spawn(async move {
         let mut buf: Vec<u8> = Vec::new();
@@ -240,23 +240,23 @@ pub async fn run_ffmpeg(
     Ok(())
 }
 
-/// แปลงไฟล์เสียง (WAV จาก TTS) เป็น mp3 ด้วย libmp3lame
+/// Convert audio file (WAV from TTS) to mp3 using libmp3lame
 pub async fn convert_to_mp3(input: &Path, output: &Path, timeout: Duration) -> anyhow::Result<()> {
     let args = build_mp3_args(input, output);
     run_ffmpeg(&args, timeout, || false).await
 }
 
-/// แนบท้าย stderr ของ ffmpeg (500 อักขรสุดท้าย) เป็นบริบทตอน error
+/// Append ffmpeg stderr snippet (up to 500 characters) as context during errors
 ///
-/// ลบ ANSI escape sequence (สี/ cursor) และ control chars แล้วยุบ whitespace
-/// เป็นบรรทัดเดียว
+/// Strips ANSI escape sequences (colors/cursor) and control characters, collapsing whitespace
+/// into a single line.
 fn stderr_hint(tail: &[u8]) -> String {
     let text = String::from_utf8_lossy(tail);
     let mut cleaned = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\x1b' {
-            // CSI sequence (ESC [ ... final) — ข้ามจนถึง final byte
+            // CSI sequence (ESC [ ... final) — skip until final byte
             if chars.peek() == Some(&'[') {
                 chars.next();
                 for c2 in chars.by_ref() {
@@ -291,7 +291,7 @@ mod tests {
         args.join(" ")
     }
 
-    /// video + narration (ไม่มี music) → map ตรง ๆ + apad + shortest + copy
+    /// video + narration (no music) → direct map + apad + shortest + copy
     #[test]
     fn test_build_args_narration_only() {
         let video = PathBuf::from("media/run-1/video-1.mp4");
@@ -316,10 +316,10 @@ mod tests {
         assert!(s.contains("-shortest"));
         assert!(s.contains("-movflags +faststart"));
         assert!(s.contains("media/run-1/assembled-1.mp4"));
-        assert!(!s.contains("filter_complex"), "single source ไม่ใช้ amix");
+        assert!(!s.contains("filter_complex"), "single source does not use amix");
     }
 
-    /// narration + music → filter_complex amix + volume ของ music
+    /// narration + music → filter_complex amix + music volume adjustment
     #[test]
     fn test_build_args_narration_and_music_uses_amix() {
         let video = PathBuf::from("v.mp4");
@@ -339,18 +339,18 @@ mod tests {
             .iter()
             .position(|a| a == "-filter_complex")
             .map(|i| args[i + 1].clone())
-            .expect("มี filter_complex");
-        // music (index 2) ผ่าน volume ก่อนแล้วค่อย amix กับ narration (index 1)
+            .expect("filter_complex exists");
+        // music (index 2) through volume before amix with narration (index 1)
         assert!(fc.starts_with("[2:a]volume=0.25[music];[1:a][music]amix=inputs=2"));
         assert!(fc.contains("duration=longest"));
         assert!(fc.contains("apad"));
         assert!(fc.ends_with("[a]"));
         assert!(s.contains("-map [a]"));
-        // ไม่ใช้ -af คู่กับ filter_complex
+        // Do not use -af alongside filter_complex
         assert!(!s.contains("-af "));
     }
 
-    /// keep_video_audio + music → 3 inputs เข้า amix (0:a ด้วย)
+    /// keep_video_audio + music → 3 inputs into amix (including 0:a)
     #[test]
     fn test_build_args_keep_video_audio_in_mix() {
         let video = PathBuf::from("v.mp4");
@@ -369,14 +369,14 @@ mod tests {
             .position(|a| a == "-filter_complex")
             .map(|i| args[i + 1].clone())
             .unwrap();
-        // music อยู่ input index 1 (ไม่มี narration) — video audio อยู่ 0:a
+        // music at input index 1 (no narration) — video audio at 0:a
         assert!(
             fc.starts_with("[1:a]volume=0.5[music];[0:a][music]amix=inputs=2"),
             "got: {fc}"
         );
     }
 
-    /// music เท่านั้น (ไม่มี keep/narration) → source เดียว + volume + apad
+    /// music only (no keep/narration) → single source + volume + apad
     #[test]
     fn test_build_args_music_only_single_source() {
         let video = PathBuf::from("v.mp4");
@@ -396,7 +396,7 @@ mod tests {
         assert!(!s.contains("filter_complex"));
     }
 
-    /// mp3 conversion args ใช้ libmp3lame
+    /// mp3 conversion args use libmp3lame
     #[test]
     fn test_build_mp3_args() {
         let args = build_mp3_args(Path::new("in.wav"), Path::new("out.mp3"));
@@ -407,7 +407,7 @@ mod tests {
         assert!(s.ends_with("out.mp3"));
     }
 
-    /// stderr hint ตัด control chars + ยุบเป็นบรรทัดเดียว + ตัดที่ 500 อักขระ
+    /// stderr hint strips control chars + collapses into single line + truncates at 500 chars
     #[test]
     fn test_stderr_hint() {
         assert_eq!(stderr_hint(b""), "");
@@ -419,12 +419,12 @@ mod tests {
         assert!(stderr_hint(&long).chars().count() < 520);
     }
 
-    /// ถ้าเครื่องมี ffmpeg จริง — ประกอบไฟล์ fixture ที่สร้างด้วย ffmpeg เอง
-    /// (testsrc + sine ไม่มีค่าใช้จ่าย API) แล้วตรวจ output เป็น MP4 ที่เล่นได้
+    /// If system has ffmpeg — assemble fixture files generated via ffmpeg itself
+    /// (testsrc + sine with zero API cost) and verify output is playable MP4
     ///
-    /// ข้ามเงียบ ๆ ถ้าไม่มี ffmpeg ใน PATH
+    /// Silently skip if ffmpeg is not in PATH
     #[tokio::test]
-    #[ignore] // ต้องมี ffmpeg ในเครื่อง — รันด้วย `cargo test -- --ignored`
+    #[ignore] // Requires ffmpeg installed — run with `cargo test -- --ignored`
     async fn test_assemble_live_with_ffmpeg_fixtures() {
         if ensure_ffmpeg().await.is_err() {
             eprintln!("skip: ffmpeg not in PATH");
@@ -438,7 +438,7 @@ mod tests {
         let out = dir.join("assembled.mp4");
         let short = Duration::from_secs(120);
 
-        // สร้าง fixture: วิดีโอ 3s (มี tone audio) + narration wav 2s + music 4s
+        // Build fixtures: 3s video (with tone audio) + 2s narration wav + 4s music mp3
         async fn mk_ffmpeg(args: Vec<String>, target: &Path) {
             let mut full = vec!["-hide_banner".into(), "-y".into()];
             full.extend(args);
@@ -488,7 +488,7 @@ mod tests {
         )
         .await;
 
-        // narration + music + keep_video_audio → amix ทั้ง 3 แหล่ง
+        // narration + music + keep_video_audio → amix all 3 sources
         let args = build_ffmpeg_args(&AssembleInputs {
             video: &video,
             narration: Some(&wav),
@@ -503,7 +503,7 @@ mod tests {
 
         let data = std::fs::read(&out).expect("output exists");
         assert!(data.len() > 1000, "output non-trivial");
-        // MP4: ftyp box อยู่ที่ offset 4
+        // MP4: ftyp box at offset 4
         assert_eq!(&data[4..8], b"ftyp", "output is an MP4");
 
         let _ = std::fs::remove_dir_all(&dir);

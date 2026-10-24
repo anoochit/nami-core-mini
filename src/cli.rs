@@ -1,4 +1,4 @@
-//! REPL โหมด CLI ของ Nami Mini (HTTP client)
+//! REPL CLI mode for Nami Mini (HTTP client)
 
 use adk_rust::{Event, EventTextDeltas, Part, UsageMetadata};
 use futures::StreamExt;
@@ -29,7 +29,7 @@ fn print_section_header(label: &str, first_output: &mut bool) {
     io::stdout().flush().ok();
 }
 
-/// ผลรวม token ของหนึ่งเทิร์น (ทุก model call ในเทิร์นบวกกันแล้ว)
+/// Token totals for a turn (summed across all model calls in the turn)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TokenTotals {
     pub prompt: i64,
@@ -38,27 +38,27 @@ pub struct TokenTotals {
     pub total: i64,
 }
 
-/// ตัวเลขที่แสดงหลังคำตอบในโหมด chat: เวลาที่ model คิด และจำนวน token ที่ใช้
+/// Turn metrics displayed after answer in chat mode: model thinking time and token usage
 #[derive(Debug, Default)]
 pub struct TurnStats {
-    /// เวลาคิดของเทิร์น — ผลรวมช่วง thinking phase เมื่อวัดได้ และเป็นเวลา
-    /// จากเริ่ม stream ถึง output ตัวแรกเมื่อ model ไม่ได้ส่ง thinking แยกมา
+    /// Thinking duration for the turn — sum of thinking phases when measured,
+    /// or time from stream start to first output as fallback when model emits no thinking
     thought: Duration,
-    /// true เมื่อมีค่า `thought` ที่จะแสดง (คิดจาก thinking หรือจาก fallback)
+    /// true when `thought` duration is available to display
     thinking_seen: bool,
-    /// `None` เมื่อ provider ไม่ส่ง usage metadata มาเลย
+    /// `None` when provider returns no usage metadata
     tokens: Option<TokenTotals>,
 }
 
-/// เก็บเวลาและ token usage ระหว่าง stream ของหนึ่งเทิร์น
+/// Tracks timing and token usage during a turn stream
 struct TurnTracker {
     stats: TurnStats,
-    /// usage เก็บแยกตาม event id: partial chunks ของ model call เดียวกัน
-    /// มี id เดียวกัน ค่าล่าสุดจึงทับของเดิมแทนที่จะนับซ้ำ แล้วค่อยรวมตอนจบ
+    /// Usage stored by event id: partial chunks for the same model call share an id,
+    /// so the latest overwrites previous ones before final summation
     usage_by_event: HashMap<String, UsageMetadata>,
-    /// จุดเริ่มช่วงคิดที่ยังไม่ปิด (`None` = ไม่ได้อยู่ในช่วงคิด)
+    /// Start instant of an open thinking phase (`None` if not currently thinking)
     thinking_started: Option<Instant>,
-    /// output ตัวแรกของเทิร์น (คำตอบ หรือ tool call) ใช้เป็น fallback ของเวลาคิด
+    /// First output of the turn (answer or tool call) used as thinking time fallback
     first_output_at: Option<Instant>,
 }
 
@@ -72,14 +72,14 @@ impl TurnTracker {
         }
     }
 
-    /// บันทึก usage ของ event นี้ (ข้ามเมื่อ provider ไม่ส่งมา)
+    /// Record event usage (skipped if provider sends no usage)
     fn on_event(&mut self, event: &Event) {
         if let Some(usage) = &event.llm_response.usage_metadata {
             self.usage_by_event.insert(event.id.clone(), usage.clone());
         }
     }
 
-    /// เริ่มจับเวลาช่วงคิดเมื่อ thinking delta ตัวแรกเข้ามา
+    /// Start timing thinking phase when first thinking delta arrives
     fn on_thinking(&mut self, now: Instant) {
         if self.thinking_started.is_none() {
             self.thinking_started = Some(now);
@@ -87,8 +87,8 @@ impl TurnTracker {
         }
     }
 
-    /// ปิดช่วงคิดเมื่อมี output (คำตอบ หรือ tool call) ตามออกมา —
-    /// เวลาที่รอ tool จึงไม่ถูกนับเป็นเวลาคิด
+    /// Close thinking phase when output (answer or tool call) follows —
+    /// tool execution time is excluded from thinking time
     fn on_output(&mut self, now: Instant) {
         if self.first_output_at.is_none() {
             self.first_output_at = Some(now);
@@ -96,17 +96,17 @@ impl TurnTracker {
         self.close_thinking_phase(now);
     }
 
-    /// รวมช่วงคิดที่เปิดค้างอยู่ (ถ้ามี) เข้าเป็น `thought`
+    /// Accumulate any active thinking phase into `thought`
     fn close_thinking_phase(&mut self, now: Instant) {
         if let Some(started) = self.thinking_started.take() {
             self.stats.thought += now.saturating_duration_since(started);
         }
     }
 
-    /// ปิดช่วงคิดที่ค้างอยู่ (เช่น model คิดแล้วเกิด error) และรวม usage ของทุก event
+    /// Close remaining thinking phase and summarize token usage for all events
     ///
-    /// `started` คือจุดเริ่มต้นของ stream — ใช้เป็นเวลาคิดแบบ fallback เมื่อ
-    /// วัดจาก thinking ไม่ได้ (model ไม่ส่ง thinking มาเลย หรือส่งมาพร้อมคำตอบ)
+    /// `started` is the stream start instant — used as fallback thinking duration when
+    /// thinking cannot be measured directly (e.g. model emits no thinking deltas)
     fn finish(&mut self, started: Instant, now: Instant) {
         self.close_thinking_phase(now);
         if self.stats.thought.is_zero()
@@ -130,9 +130,9 @@ impl TurnTracker {
     }
 }
 
-/// สร้างบรรทัดสรุป "thought time + token count" — คืน `None` เมื่อไม่มีอะไรจะแสดง
+/// Formats summary line "thought time + token count" — returns `None` when nothing to display
 ///
-/// ตัวอย่างผลลัพธ์: `💭 thought 1.8s · tokens 1,240 (prompt 900 · output 160 · thinking 180)`
+/// Example output: `💭 thought 1.8s · tokens 1,240 (prompt 900 · output 160 · thinking 180)`
 pub fn stats_line(stats: &TurnStats) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
 
@@ -173,7 +173,7 @@ pub fn stats_line(stats: &TurnStats) -> Option<String> {
     }
 }
 
-/// รูปแบบเวลา: มิลลิวินาทีใต้ 1 วินาที ไม่เช่นนั้นเป็นวินาทีทศนิยมหนึ่งตำแหน่ง
+/// Duration formatting: milliseconds when < 1 second, else decimal seconds to 1 decimal place
 fn format_duration(duration: Duration) -> String {
     if duration.as_millis() < 1000 {
         format!("{}ms", duration.as_millis())
@@ -182,7 +182,7 @@ fn format_duration(duration: Duration) -> String {
     }
 }
 
-/// เลขหลักพันคั่นด้วยจุลภาค เช่น `1240` → `1,240`
+/// Format integer with thousands commas, e.g., `1240` → `1,240`
 fn fmt_int(value: i64) -> String {
     let digits = value.abs().to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
@@ -199,11 +199,11 @@ fn fmt_int(value: i64) -> String {
     }
 }
 
-/// สรุปผล tool response เป็นบรรทัดสำหรับแสดงใน `tool:` section
+/// Summarize tool response into lines for the `tool:` section
 ///
-/// - `error` ( convention ของ tool nami) → บรรทัด `❌`
-/// - `outputs` (media tools: path + bytes + duration) → บรรทัด `✅` + รายการ path
-/// - อย่างอื่น → บรรทัด `✅` + JSON สั้น ๆ (ตัดที่ 160 อักขระ)
+/// - `error` (Nami tool convention) → `❌` line
+/// - `outputs` (media tools: path + bytes + duration) → `✅` line + list of paths
+/// - other → `✅` line + short JSON (truncated at 160 chars)
 fn tool_result_lines(name: &str, response: &Value) -> Vec<String> {
     if let Some(err) = response.get("error").and_then(Value::as_str) {
         return vec![format!("❌ {name}: {}", truncate_line(err, 200))];
@@ -237,9 +237,9 @@ fn tool_result_lines(name: &str, response: &Value) -> Vec<String> {
     vec![format!("✅ {name}: {}", truncate_line(&text, 160))]
 }
 
-/// ปรับ progress chunk ให้เป็นบรรทัดเดียว: trim + ขึ้นบรรทัดใหม่ → ช่องว่าง
+/// Format progress chunk to single line: trim + newlines → spaces
 ///
-/// ตัวอย่าง: `"still rendering — 30s elapsed\n"` → `"… still rendering — 30s elapsed"`
+/// Example: `"still rendering — 30s elapsed\n"` → `"… still rendering — 30s elapsed"`
 fn format_progress_chunk(text: &str) -> String {
     let flat = text.replace(['\n', '\r'], " ");
     format!(
@@ -248,7 +248,7 @@ fn format_progress_chunk(text: &str) -> String {
     )
 }
 
-/// ตัดบรรทัดยาวให้สั้นพออ่าน: ยุบ whitespace แล้วตัดที่ `max` อักขระ (char boundary)
+/// Truncate long line: collapse whitespace and truncate at `max` characters (char boundary)
 fn truncate_line(text: &str, max: usize) -> String {
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if flat.chars().count() <= max {
@@ -259,7 +259,7 @@ fn truncate_line(text: &str, max: usize) -> String {
     }
 }
 
-/// ขนาดไฟล์ human-readable: B / KB / MB
+/// Human-readable file size: B / KB / MB
 fn fmt_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = 1024.0 * 1024.0;
@@ -277,7 +277,7 @@ use crate::config::DisplayOptions;
 /// Render streamed SSE events from an HTTP response to stdout.
 /// Configured via [`DisplayOptions`] to show/hide thinking, tool calls, and tool results.
 ///
-/// คืนค่า [`TurnStats`] ของเทิร์น (เวลาคิด + จำนวน token) ให้ caller แสดงผลต่อ
+/// Returns [`TurnStats`] for the turn (thinking duration + token count) for caller display
 pub async fn render_stream_response(
     response: reqwest::Response,
     display: DisplayOptions,
@@ -316,8 +316,8 @@ pub async fn render_stream_response(
 
             let evt = text_deltas.push(&evt);
 
-            // progress chunk ของ tool ที่กำลังรัน (เช่น video render) — แสดงเป็น
-            // บรรทัดสดใน tool section และไม่แตะ stats (no usage / no output timing)
+            // Tool progress chunk (e.g. video render) — rendered directly in tool section
+            // without modifying stats (no usage / no output timing)
             if evt.tool_progress_stream().is_some() {
                 if (display.show_tool_call || display.show_tool_result)
                     && let Some(content) = evt.content()
@@ -363,8 +363,8 @@ pub async fn render_stream_response(
                             }
                         }
                         Part::FunctionCall { name, args, .. } => {
-                            // partial event ของ model stream — final event (non-partial)
-                            // จะ carry call เดียวกันอีกครั้ง จึงพิมพ์เฉพาะรอบ committed
+                            // Partial event of model stream — final (non-partial) event will
+                            // carry same call, so print only on committed event
                             if evt.llm_response.partial {
                                 continue;
                             }
@@ -378,7 +378,7 @@ pub async fn render_stream_response(
                                 io::stdout().flush().ok();
                             }
                         }
-                        // ผลลัพธ์ของ tool (media: path + metadata, อื่น ๆ: JSON สั้น)
+                        // Tool result (media: path + metadata, other: short JSON)
                         Part::FunctionResponse {
                             function_response, ..
                         } => {
@@ -459,7 +459,7 @@ pub fn is_builtin_command(line: &str) -> bool {
     )
 }
 
-/// รัน REPL อินเทอร์แอคทีฟ อ่านบรรทัดจาก stdin แล้วส่งคำขอผ่าน NamiApiClient
+/// Runs interactive REPL, reads lines from stdin and sends requests via NamiApiClient
 pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiConfig) -> anyhow::Result<()> {
     println!();
     println!("  Nami - ({})", client.app_name());
@@ -694,7 +694,7 @@ mod tests {
 
         tracker.on_thinking(start);
         tracker.on_output(start + Duration::from_millis(1200));
-        // ช่วงรอ tool ระหว่างคิด-ตอบ ไม่นับเป็นเวลาคิด
+        // Tool wait time between thinking and output is excluded from thinking duration
         tracker.on_output(start + Duration::from_secs(3));
         tracker.on_thinking(start + Duration::from_secs(4));
         tracker.on_output(start + Duration::from_secs(5));
@@ -713,8 +713,8 @@ mod tests {
         assert_eq!(tracker.stats.thought, Duration::from_millis(500));
     }
 
-    /// model ที่ไม่ส่ง thinking มาเลย (เช่น gemini-3.5-flash-lite ใน nami.json)
-    /// ต้องยังแสดง "thought" จากเวลาถึง output ตัวแรกได้
+    /// Models that send no thinking deltas (e.g. gemini-3.5-flash-lite)
+    /// fall back to duration until first output
     #[test]
     fn thought_falls_back_to_time_of_first_output_without_thinking() {
         let mut tracker = TurnTracker::new();
@@ -728,8 +728,8 @@ mod tests {
         assert_eq!(tracker.stats.thought, Duration::from_millis(900));
     }
 
-    /// thinking มาพร้อมคำตอบใน event เดียว (วัด phase ไม่ได้)
-    /// ต้องใช้เวลาถึง output ตัวแรกแทน
+    /// Thinking arriving with answer in same event (phase unmeasurable)
+    /// falls back to first output time
     #[test]
     fn thought_falls_back_when_thinking_arrives_with_the_answer() {
         let mut tracker = TurnTracker::new();
@@ -743,7 +743,7 @@ mod tests {
         assert_eq!(tracker.stats.thought, Duration::from_millis(700));
     }
 
-    /// ไม่มี output เลย (error ตั้งแต่ต้น) ต้องไม่เอาเวลาทั้งเทิร์นมาเป็นเวลาคิด
+    /// No output at all (error from start) must not report turn duration as thinking time
     #[test]
     fn no_output_means_no_thought_time() {
         let mut tracker = TurnTracker::new();
@@ -758,8 +758,8 @@ mod tests {
         let mut tracker = TurnTracker::new();
 
         tracker.on_event(&event_with_usage("evt-1", usage(100, 20, 5, 125)));
-        // partial chunk ของ model call เดียวกันมี event id เดียวกัน:
-        // ค่าล่าสุดทับของเดิมแทนที่จะบวกเพิ่ม
+        // Partial chunks for same model call share event id:
+        // latest overwrites earlier value instead of adding
         tracker.on_event(&event_with_usage("evt-1", usage(100, 30, 5, 135)));
         tracker.on_event(&event_with_usage("evt-2", usage(50, 10, 0, 60)));
         tracker.finish(Instant::now(), Instant::now());
@@ -803,7 +803,7 @@ mod tests {
             Some("💭 thought 1.8s · tokens 1,240 (prompt 900 · output 160 · thinking 180)")
         );
 
-        // ไม่มี thinking จริง (provider ไม่ stream thinking) ต้องไม่แสดง thought
+        // No actual thinking (provider does not stream thinking) → do not show thought
         let tokens_only = TurnStats {
             thought: Duration::ZERO,
             thinking_seen: false,
@@ -853,8 +853,8 @@ mod tests {
     #[test]
     fn truncate_line_flattens_whitespace_and_cuts_at_char_boundary() {
         assert_eq!(truncate_line("  a\n  b  ", 100), "a b");
-        // ตัดที่ max อักขระ + ellipsis (ไม่ panic กลาง char — ตัดด้วย chars())
-        let long = "ก".repeat(300);
+        // Cut at max chars + ellipsis (no panic mid-char — slice with chars())
+        let long = "x".repeat(300);
         let cut = truncate_line(&long, 10);
         assert_eq!(cut.chars().count(), 11); // 10 + …
         assert!(cut.ends_with('…'));
@@ -897,7 +897,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert!(lines[0].starts_with("✅ search: "));
         assert!(lines[0].ends_with('…'));
-        // ทั้งเส้นไม่ยาวกว่า prefix + 160 + ellipsis
+        // Total line length does not exceed prefix + 160 + ellipsis
         assert!(lines[0].chars().count() < "✅ search: ".len() + 162);
     }
 

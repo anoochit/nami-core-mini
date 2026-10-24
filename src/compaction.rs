@@ -1,9 +1,9 @@
-//! Context Compaction สำหรับ Nami Mini
+//! Context Compaction for Nami Mini
 //!
-//! ใช้ `EventsCompactionConfig` (post-run แบบนับจำนวนรอบสนทนา) ของ adk-rust เพื่อสรุป
-//! ประวัติเก่าให้สั้นลงเป็นระยะ กลไกกระตุ้นแบบ token-budget ("70% ของ context") ต้องสร้าง
-//! `Runner` โดยตรง ซึ่ง `Launcher`/`ServerConfig` ใน adk-rust 2.3.0 ไม่เปิดให้ตั้งค่า — จึงยัง
-//! จำกัดอยู่ที่การกระตุ้นแบบนับรอบสนทนาในโหมด serve เท่านั้น
+//! Uses `EventsCompactionConfig` (post-run turn-count based compaction) from adk-rust to
+//! periodically summarize older conversation history. Token-budget based compaction ("70% of context")
+//! requires direct `Runner` construction, which `Launcher`/`ServerConfig` in adk-rust 2.3.0 does not expose —
+//! hence compaction is currently configured per turn interval in server mode.
 
 use adk_rust::async_trait;
 use adk_rust::{
@@ -16,10 +16,10 @@ use std::sync::Arc;
 use crate::agent::{build_model, effective_temperature};
 use crate::config::NamiConfig;
 
-/// Summarizer ที่ใช้ LLM ของแอปเพื่อสรุปหน้าต่าง event ให้กลายเป็น event เดียว
+/// Summarizer using application LLM to compact event window into a single summary event
 pub struct NamiEventsSummarizer {
     model: Arc<dyn Llm>,
-    /// sampling temperature ของแอป — สรุปใช้ค่าเดียวกับ turn ปกติ
+    /// Application sampling temperature — summary uses same value as standard turns
     temperature: Option<f32>,
 }
 
@@ -84,7 +84,7 @@ impl BaseEventsSummarizer for NamiEventsSummarizer {
     }
 }
 
-/// สร้าง prompt สำหรับสรุปจากรายการ event
+/// Construct summary prompt from event list
 fn build_summary_prompt(events: &[Event]) -> String {
     let mut prompt = String::from(
         "Summarize the following conversation history into a concise summary \
@@ -104,9 +104,9 @@ fn build_summary_prompt(events: &[Event]) -> String {
     prompt
 }
 
-/// สร้าง `EventsCompactionConfig` จาก `NamiConfig` เมื่อการ compaction เปิดอยู่
+/// Construct `EventsCompactionConfig` from `NamiConfig` when compaction is enabled
 ///
-/// คืนค่า `None` เมื่อ `compaction.enabled` เป็น `false` เพื่อไม่แนบ compaction เลย
+/// Returns `None` when `compaction.enabled` is `false`
 pub fn build_compaction_config(
     config: &NamiConfig,
 ) -> anyhow::Result<Option<EventsCompactionConfig>> {

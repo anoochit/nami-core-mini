@@ -39,7 +39,7 @@ pub struct ExecuteCommandParams {
     pub path: Option<String>,
 }
 
-/// สร้างเครื่องมือ execute_command เดี่ยว ๆ สำหรับใช้ร่วมกับ DevTools โดยไม่เกิดชื่อเครื่องมือซ้ำ
+/// Create standalone execute_command tool for DevTools integration without tool name collision
 pub fn create_execute_command_tool(guard: WorkspaceGuard) -> Arc<dyn Tool> {
     let exec_tool = FunctionTool::new(
         "execute_command",
@@ -101,7 +101,7 @@ pub fn create_execute_command_tool(guard: WorkspaceGuard) -> Arc<dyn Tool> {
     Arc::new(exec_tool)
 }
 
-/// สร้างเครื่องมือ filesystem ที่ประกอบด้วย read_file, write_file, list_files และ execute_command พร้อม WorkspaceGuard
+/// Create filesystem toolset consisting of read_file, write_file, list_files, and execute_command with WorkspaceGuard
 pub fn create_filesystem_toolset(guard: WorkspaceGuard) -> Vec<Arc<dyn Tool>> {
     let g_read = guard.clone();
     let read_tool = FunctionTool::new(

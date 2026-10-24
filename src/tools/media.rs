@@ -1,8 +1,8 @@
-//! ชุดเครื่องมือ media (Gemini image/TTS/video) สำหรับ sub-agent
+//! Media toolset (Gemini image/TTS/video) for sub-agents.
 //!
-//! แต่ละ tool เขียนไฟล์ลง `media/run-<ts>-<id>/` พร้อม `manifest.json`
-//! (traceability) แล้วคืน **path + metadata เท่านั้น** — ไม่คืน base64 เข้า
-//! context ของ model ดูแผนใน `wiki/multimodal-generation-plan.md`
+//! Each tool writes files to `media/run-<ts>-<id>/` with `manifest.json`
+//! (traceability) and returns **path + metadata only** — no base64 returned into
+//! model context. See plan in `wiki/multimodal-generation-plan.md`.
 
 use crate::config::{MediaConfig, NamiConfig};
 use crate::media::{self, image, music, tts, video};
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-/// พารามิเตอร์ของ `generate_image`
+/// Parameters for `generate_image`
 #[derive(JsonSchema, Serialize, Deserialize, Debug)]
 pub struct GenerateImageParams {
     /// Detailed image description (English works best), e.g. 'A minimalist line drawing of an ocean wave, white background'
@@ -24,11 +24,11 @@ pub struct GenerateImageParams {
     pub style_preset: Option<String>,
 }
 
-/// แปลง raw args (JSON จาก model) เป็น struct พร้อม validate
+/// Parses raw args (JSON from model) into a struct and validates.
 ///
-/// แยกเป็น pure function เพื่อทดสอบได้โดยไม่ต้องสร้าง tool
-/// หมายเหตุ: ใช้ `std::result::Result` เต็มรูปแบบเพราะ prelude ของ adk
-/// shadow `Result` ด้วย `Result<T, AdkError>`
+/// Extracted as a pure function for testability without creating a tool.
+/// Note: Uses full `std::result::Result` because ADK prelude shadows `Result`
+/// with `Result<T, AdkError>`.
 fn parse_image_args(args: &Value) -> std::result::Result<GenerateImageParams, String> {
     let prompt = args
         .get("prompt")
@@ -64,10 +64,10 @@ fn parse_image_args(args: &Value) -> std::result::Result<GenerateImageParams, St
     })
 }
 
-/// ประกอบ prompt สุดท้าย: ต่อ style hint เข้าท้าย prompt
+/// Composes the final prompt: appends style hint to the end of prompt.
 ///
-/// Gemini image ไม่มีพารามิเตอร์ style จริง — style_preset จึงเป็น hint ที่ต่อ
-/// เข้ากับ prompt (แยกเป็น pure function เพื่อทดสอบได้)
+/// Gemini image has no native style parameter — style_preset is a hint appended
+/// to prompt (pure function for testability).
 fn compose_prompt(prompt: &str, style_preset: Option<&str>) -> String {
     match style_preset {
         Some(style) => format!("{prompt}\n\nStyle: {style}."),
@@ -75,7 +75,7 @@ fn compose_prompt(prompt: &str, style_preset: Option<&str>) -> String {
     }
 }
 
-/// สร้าง tool `generate_image` — เรียก Gemini image model แล้วบันทึกลง disk
+/// Creates `generate_image` tool — calls Gemini image model and saves to disk.
 pub fn create_image_tool(cfg: MediaConfig) -> Arc<dyn Tool> {
     let tool = FunctionTool::new(
         "generate_image",
@@ -150,7 +150,7 @@ pub fn create_image_tool(cfg: MediaConfig) -> Arc<dyn Tool> {
                                      calls (e.g. generate_video) — never request their bytes \
                                      back into the conversation.",
                         });
-                        // ข้อความ accompanying ของไฟล์แรก (ถ้า model คืนมา)
+                        // Accompanying text of first file (if model returned one)
                         if let Some(text) = images.first().and_then(|i| i.text.as_deref()) {
                             result["text"] = json!(text);
                         }
@@ -168,14 +168,14 @@ pub fn create_image_tool(cfg: MediaConfig) -> Arc<dyn Tool> {
             }
         },
     )
-    // media tools เขียนไฟล์คนละไฟล์ต่อการเรียก — ปลอดภัยต่อ parallel execution
+    // Media tools write separate files per call — safe for parallel execution
     .with_concurrency_safe(true)
     .with_parameters_schema::<GenerateImageParams>();
 
     Arc::new(tool)
 }
 
-/// พารามิเตอร์ของ `generate_tts`
+/// Parameters for `generate_tts`
 #[derive(JsonSchema, Serialize, Deserialize, Debug)]
 pub struct GenerateTtsParams {
     /// The text to speak. Keep each clip short (1-3 sentences) so scene audio stays in sync.
@@ -188,10 +188,10 @@ pub struct GenerateTtsParams {
     pub output_format: Option<String>,
 }
 
-/// แปลง raw args (JSON จาก model) เป็น struct พร้อม validate
+/// Parses raw args (JSON from model) into a struct and validates.
 ///
-/// หมายเหตุ: ใช้ `std::result::Result` เต็มรูปแบบเพราะ prelude ของ adk
-/// shadow `Result` ด้วย `Result<T, AdkError>`
+/// Note: Uses full `std::result::Result` because ADK prelude shadows `Result`
+/// with `Result<T, AdkError>`.
 fn parse_tts_args(args: &Value) -> std::result::Result<GenerateTtsParams, String> {
     let text = args
         .get("text")
@@ -210,7 +210,7 @@ fn parse_tts_args(args: &Value) -> std::result::Result<GenerateTtsParams, String
         _ => None,
     };
 
-    // output_format: "wav" (native) หรือ "mp3" (แปลงผ่าน ffmpeg ที่เครื่อง)
+    // output_format: "wav" (native) or "mp3" (converted locally via ffmpeg)
     let output_format = match args.get("output_format") {
         Some(Value::String(s)) => {
             let fmt = s.trim().to_ascii_lowercase();
@@ -234,10 +234,10 @@ fn parse_tts_args(args: &Value) -> std::result::Result<GenerateTtsParams, String
     })
 }
 
-/// สร้าง tool `generate_tts` — เรียก Gemini TTS model แล้วบันทึกลง disk
+/// Creates `generate_tts` tool — calls Gemini TTS model and saves to disk.
 ///
-/// ไม่ whitelist รายชื่อ voice เพราะ Google เพิ่ม/เปลี่ยนบ่อย — ให้ API
-/// คืน error เองเมื่อ voice ไม่ถูกต้อง (ข้อความ error บอกชื่อที่ไม่รู้จัก)
+/// Does not whitelist voice names as Google updates them often — lets API
+/// return error on invalid voice.
 pub fn create_tts_tool(cfg: MediaConfig) -> Arc<dyn Tool> {
     let tool = FunctionTool::new(
         "generate_tts",
@@ -309,8 +309,8 @@ pub fn create_tts_tool(cfg: MediaConfig) -> Arc<dyn Tool> {
                             }
                             let duration = tts::estimate_wav_duration_secs(&clip.data);
 
-                            // output_format=mp3: แปลงไฟล์ที่เพิ่งเขียนเป็น mp3
-                            // แล้วลบ wav ต้นฉบับ (manifest เก็บเฉพาะ mp3)
+                            // output_format=mp3: convert freshly written file to mp3
+                            // and remove original wav (manifest stores mp3 only)
                             let mut out_bytes = clip.data.len() as u64;
                             if want_mp3 {
                                 let mp3_path = run_dir.join(format!("speech-{}.mp3", i + 1));
@@ -370,14 +370,14 @@ pub fn create_tts_tool(cfg: MediaConfig) -> Arc<dyn Tool> {
             }
         },
     )
-    // media tools เขียนไฟล์คนละไฟล์ต่อการเรียก — ปลอดภัยต่อ parallel execution
+    // Media tools write separate files per call — safe for parallel execution
     .with_concurrency_safe(true)
     .with_parameters_schema::<GenerateTtsParams>();
 
     Arc::new(tool)
 }
 
-/// พารามิเตอร์ของ `generate_music`
+/// Parameters for `generate_music`
 #[derive(JsonSchema, Serialize, Deserialize, Debug)]
 pub struct GenerateMusicParams {
     /// What the music should sound like: mood, instrumentation, tempo, scene context
@@ -386,10 +386,10 @@ pub struct GenerateMusicParams {
     pub style: Option<String>,
 }
 
-/// แปลง raw args (JSON จาก model) เป็น struct พร้อม validate
+/// Parses raw args (JSON from model) into a struct and validates.
 ///
-/// หมายเหตุ: ใช้ `std::result::Result` เต็มรูปแบบเพราะ prelude ของ adk
-/// shadow `Result` ด้วย `Result<T, AdkError>`
+/// Note: Uses full `std::result::Result` because ADK prelude shadows `Result`
+/// with `Result<T, AdkError>`.
 fn parse_music_args(args: &Value) -> std::result::Result<GenerateMusicParams, String> {
     let prompt = args
         .get("prompt")
@@ -407,10 +407,10 @@ fn parse_music_args(args: &Value) -> std::result::Result<GenerateMusicParams, St
     Ok(GenerateMusicParams { prompt, style })
 }
 
-/// สร้าง tool `generate_music` — เรียก Lyria music model แล้วบันทึกลง disk
+/// Creates `generate_music` tool — calls Lyria music model and saves to disk.
 ///
-/// ไม่มี parameter ควบคุมความยาว/จังหวะ — model คืนคลิป ~30 วินาทีคงที่
-/// (spike ยืนยัน `durationSeconds` ถูก 400 ปฏิเสธ) จึงปรับสไตล์ผ่าน prompt
+/// No length/tempo parameter control — model returns fixed ~30s clip (spikes confirm
+/// `durationSeconds` returns 400 rejection); style is adjusted via prompt.
 pub fn create_music_tool(cfg: MediaConfig) -> Arc<dyn Tool> {
     let tool = FunctionTool::new(
         "generate_music",
@@ -492,14 +492,14 @@ pub fn create_music_tool(cfg: MediaConfig) -> Arc<dyn Tool> {
             }
         },
     )
-    // media tools เขียนไฟล์คนละไฟล์ต่อการเรียก — ปลอดภัยต่อ parallel execution
+    // Media tools write separate files per call — safe for parallel execution
     .with_concurrency_safe(true)
     .with_parameters_schema::<GenerateMusicParams>();
 
     Arc::new(tool)
 }
 
-/// พารามิเตอร์ของ `generate_video`
+/// Parameters for `generate_video`
 #[derive(JsonSchema, Serialize, Deserialize, Debug)]
 pub struct GenerateVideoParams {
     /// Cinematic scene description, e.g. 'A calm ocean wave rolling at golden hour, slow motion'
@@ -512,18 +512,18 @@ pub struct GenerateVideoParams {
     pub reference_image_path: Option<String>,
 }
 
-/// ค่าที่ `generate_video` รองรับสำหรับ duration/aspect
+/// Supported values for `generate_video` duration/aspect.
 ///
-/// โมเดลวิดีโอตัวปัจจุบัน (`gemini-omni-1.1-flash`) ไม่มี config รับค่าเหล่านี้
-/// จึงส่งเป็น prompt hint ผ่าน `video::compose_video_prompt` — whitelist นี้สื่อ
-/// ความตั้งใจและให้ feedback เร็วแก่ model ก่อนยิง API
+/// Current video model (`gemini-omni-1.1-flash`) has no config fields for these,
+/// so they are passed as prompt hints via `video::compose_video_prompt` — this whitelist
+/// conveys intent and provides fast feedback to model before calling API.
 const VIDEO_DURATIONS: &[u32] = &[4, 6, 8];
 const VIDEO_ASPECT_RATIOS: &[&str] = &["16:9", "9:16"];
 
-/// แปลง raw args (JSON จาก model) เป็น struct พร้อม validate duration/aspect
+/// Parses raw args (JSON from model) into a struct and validates duration/aspect.
 ///
-/// หมายเหตุ: ใช้ `std::result::Result` เต็มรูปแบบเพราะ prelude ของ adk
-/// shadow `Result` ด้วย `Result<T, AdkError>`
+/// Note: Uses full `std::result::Result` because ADK prelude shadows `Result`
+/// with `Result<T, AdkError>`.
 fn parse_video_args(args: &Value) -> std::result::Result<GenerateVideoParams, String> {
     let prompt = args
         .get("prompt")
@@ -533,7 +533,7 @@ fn parse_video_args(args: &Value) -> std::result::Result<GenerateVideoParams, St
         .ok_or_else(|| "Missing required argument: prompt".to_string())?
         .to_string();
 
-    // model บางตัวส่ง "8" มาเป็น string — ยอมรับทั้ง number และ numeric string
+    // Some models send "8" as string — accept both number and numeric string
     let duration_seconds = match args.get("duration_seconds") {
         Some(Value::Number(n)) => n.as_u64().map(|v| v as u32),
         Some(Value::String(s)) => s.trim().parse::<u32>().ok(),
@@ -584,7 +584,7 @@ fn parse_video_args(args: &Value) -> std::result::Result<GenerateVideoParams, St
     })
 }
 
-/// MIME type ของไฟล์อ้างอิงจากนามสกุล (โมเดลวิดีโอรับ image/png|jpeg|webp)
+/// MIME type for reference image from extension (video model accepts image/png|jpeg|webp)
 fn mime_for_reference_image(path: &std::path::Path) -> Option<&'static str> {
     match path
         .extension()
@@ -599,11 +599,11 @@ fn mime_for_reference_image(path: &std::path::Path) -> Option<&'static str> {
     }
 }
 
-/// สร้าง tool `generate_video` — สร้าง video interaction แล้วรอจนคลิปเสร็จ
+/// Creates `generate_video` tool — creates video interaction and waits for clip completion.
 ///
-/// ใช้ Interactions API ของ `gemini-omni-1.1-flash` (ดู `src/media/video.rs`) —
-/// การเรียกนี้ใช้เวลาเป็นนาที (รอ server render) — หมั่น check
-/// `ctx.is_cancelled()` ระหว่าง poll และจำกัดด้วย `media.timeout_secs`
+/// Uses Interactions API of `gemini-omni-1.1-flash` (see `src/media/video.rs`) —
+/// this call takes minutes (waiting for server render) — periodically check
+/// `ctx.is_cancelled()` during polling and bound by `media.timeout_secs`.
 pub fn create_video_tool(
     media_cfg: MediaConfig,
     allowed_paths: Vec<std::path::PathBuf>,
@@ -628,7 +628,7 @@ pub fn create_video_tool(
                     Err(e) => return Ok(json!({ "error": e.to_string() })),
                 };
 
-                // reference image: validate ด้วย workspace guard แล้วอ่าน + base64
+                // reference image: validate with workspace guard then read + base64
                 let reference: Option<(String, String)> = match &params.reference_image_path {
                     Some(p) => {
                         let guard = match WorkspaceGuard::new(allowed_paths.clone(), read_only) {
@@ -736,16 +736,16 @@ pub fn create_video_tool(
         },
     )
     .with_concurrency_safe(true)
-    // คลิปใช้เวลาเป็นนาที — description note บอก model ว่าอย่าเรียกซ้ำระหว่างรอ
-    // (หมายเหตุ: runner มี tool_timeout 300s ของตัวเอง — agent.rs ปรับให้สูงกว่า
-    // media.timeout_secs เมื่อ sub-agent มี media tools)
+    // Clips take minutes — description note tells model not to retry while waiting
+    // (Note: runner has its own tool_timeout 300s — agent.rs sets higher than
+    // media.timeout_secs when sub-agent has media tools)
     .with_long_running(true)
     .with_parameters_schema::<GenerateVideoParams>();
 
     Arc::new(tool)
 }
 
-/// พารามิเตอร์ของ `assemble_audio_video`
+/// Parameters for `assemble_audio_video`
 #[derive(JsonSchema, Serialize, Deserialize, Debug)]
 pub struct AssembleAudioVideoParams {
     /// Path to the source video file inside the workspace (output of generate_video or any MP4)
@@ -760,10 +760,10 @@ pub struct AssembleAudioVideoParams {
     pub keep_video_audio: Option<bool>,
 }
 
-/// แปลง raw args (JSON จาก model) เป็น struct พร้อม validate
+/// Parses raw args (JSON from model) into a struct and validates.
 ///
-/// หมายเหตุ: ใช้ `std::result::Result` เต็มรูปแบบเพราะ prelude ของ adk
-/// shadow `Result` ด้วย `Result<T, AdkError>`
+/// Note: Uses full `std::result::Result` because ADK prelude shadows `Result`
+/// with `Result<T, AdkError>`.
 fn parse_assemble_args(args: &Value) -> std::result::Result<AssembleAudioVideoParams, String> {
     let video_path = args
         .get("video_path")
@@ -806,19 +806,19 @@ fn parse_assemble_args(args: &Value) -> std::result::Result<AssembleAudioVideoPa
     })
 }
 
-/// อ่านค่า keep_video_audio จาก args (default false)
+/// Reads keep_video_audio value from args (default false)
 fn keep_video_audio_of(args: &Value) -> bool {
     args.get("keep_video_audio")
         .and_then(Value::as_bool)
         .unwrap_or(false)
 }
 
-/// สร้าง tool `assemble_audio_video` — ประกอบ video + narration (+ music) ด้วย
-/// ffmpeg local แล้วบันทึกลง run dir + manifest
+/// Creates `assemble_audio_video` tool — combines video + narration (+ music)
+/// using local ffmpeg and saves to run dir + manifest.
 ///
-/// video duration เป็น master: เสียงถูก pad (`apad`) หรือตัด (`-shortest`)
-/// ให้จบพร้อมวิดีโอเสมอ — output เขียนลง run dir เสมอ (ไม่รับ output_path
-/// จาก model เพื่อไม่ต้องเดาเรื่อง workspace ตอนเขียนไฟล์)
+/// Video duration is master: audio is padded (`apad`) or trimmed (`-shortest`)
+/// to finish with video — output is always written to run dir (does not accept
+/// output_path from model to avoid workspace path guessing).
 pub fn create_assemble_tool(
     media_cfg: MediaConfig,
     allowed_paths: Vec<std::path::PathBuf>,
@@ -844,7 +844,7 @@ pub fn create_assemble_tool(
                     return Ok(json!({ "error": e.to_string() }));
                 }
 
-                // validate ทุก input path ด้วย workspace guard
+                // Validate all input paths using workspace guard
                 let guard = match WorkspaceGuard::new(allowed_paths.clone(), read_only) {
                     Ok(g) => g,
                     Err(e) => return Ok(json!({ "error": format!("workspace guard: {e}") })),
@@ -874,7 +874,7 @@ pub fn create_assemble_tool(
                     (None, _) => None,
                 };
 
-                // music volume: default 0.3 เมื่อ mix กับ source อื่น, 1.0 เมื่อ music เดียว
+                // Music volume: default 0.3 when mixing with other sources, 1.0 when music only
                 let keep_video_audio = params.keep_video_audio.unwrap_or(false);
                 let music_volume =
                     params
@@ -961,16 +961,16 @@ pub fn create_assemble_tool(
             }
         },
     )
-    // ffmpeg ใช้ CPU ของเครื่องคนละ process — รันคู่กันได้ (เขียนคนละ run dir)
+    // ffmpeg uses local CPU as a separate process — safe to run concurrently (writes to distinct run dir)
     .with_concurrency_safe(true)
     .with_parameters_schema::<AssembleAudioVideoParams>();
 
     Arc::new(tool)
 }
 
-/// สร้าง toolset media ตาม `media.enabled` ใน nami.json
+/// Creates media toolset based on `media.enabled` in nami.json.
 ///
-/// คืน empty vec เมื่อ media ปิดอยู่ — ผู้เรียก (agent.rs) จะ warn ให้
+/// Returns empty vec when media is disabled — caller (agent.rs) will issue a warning.
 pub fn create_media_toolset(config: &NamiConfig) -> Vec<Arc<dyn Tool>> {
     if !config.media.enabled {
         return vec![];
@@ -996,7 +996,7 @@ pub fn create_media_toolset(config: &NamiConfig) -> Vec<Arc<dyn Tool>> {
 mod tests {
     use super::*;
 
-    /// args ครบ + aspect ถูกต้อง → parse ผ่าน
+    /// All args provided + valid aspect -> parse succeeds
     #[test]
     fn test_parse_image_args_full() {
         let args = json!({
@@ -1010,7 +1010,7 @@ mod tests {
         assert_eq!(p.style_preset.as_deref(), Some("watercolor"));
     }
 
-    /// prompt ว่าง/ไม่ระบุ = error; aspect/style ว่าง string = ถือเป็น None
+    /// Empty/missing prompt = error; empty aspect/style string = treated as None
     #[test]
     fn test_parse_image_args_validation() {
         assert!(parse_image_args(&json!({})).is_err());
@@ -1023,7 +1023,7 @@ mod tests {
         assert!(p.style_preset.is_none());
     }
 
-    /// aspect ratio นอก whitelist ต้อง error พร้อมบอกตัวเลือกที่รองรับ
+    /// Aspect ratio outside whitelist must error with supported options
     #[test]
     fn test_parse_image_args_rejects_bad_aspect() {
         let err = parse_image_args(&json!({ "prompt": "x", "aspect_ratio": "7:3" })).unwrap_err();
@@ -1031,7 +1031,7 @@ mod tests {
         assert!(err.contains("16:9"));
     }
 
-    /// style hint ถูกต่อเข้าท้าย prompt / ไม่มี style = prompt เดิม
+    /// Style hint appended to prompt / no style = original prompt
     #[test]
     fn test_compose_prompt() {
         assert_eq!(compose_prompt("a wave", None), "a wave");
@@ -1040,7 +1040,7 @@ mod tests {
         assert!(styled.contains("Style: watercolor."));
     }
 
-    /// args TTS ครบ → parse ผ่าน; voice/emotion ไม่ระบุ = None
+    /// All TTS args provided -> parse succeeds; missing voice/emotion = None
     #[test]
     fn test_parse_tts_args() {
         let p = parse_tts_args(&json!({ "text": "Hello from Nami." })).unwrap();
@@ -1056,7 +1056,7 @@ mod tests {
         assert_eq!(p.emotion.as_deref(), Some("cheerful"));
     }
 
-    /// text ว่าง/ไม่ระบุ = error; voice/emotion ว่าง string = ถือเป็น None
+    /// Empty/missing text = error; empty voice/emotion string = treated as None
     #[test]
     fn test_parse_tts_args_validation() {
         assert!(parse_tts_args(&json!({})).is_err());
@@ -1067,7 +1067,7 @@ mod tests {
         assert!(p.emotion.is_none());
     }
 
-    /// media ปิด = empty toolset; เปิด = มี image + tts
+    /// Media disabled = empty toolset; enabled = image + tts + music + video + assemble
     #[test]
     fn test_media_toolset_respects_enabled() {
         let base = r#"{
@@ -1091,7 +1091,7 @@ mod tests {
         );
     }
 
-    /// args assemble: audio_path อย่างเดียว / music อย่างเดียว / volume + keep
+    /// Assemble args: audio_path only / music_path only / volume + keep
     #[test]
     fn test_parse_assemble_args() {
         let p = parse_assemble_args(&json!({
@@ -1104,7 +1104,7 @@ mod tests {
         assert!(p.music_path.is_none());
         assert!(p.music_volume.is_none());
 
-        // music เดียว + volume + keep_video_audio
+        // music only + volume + keep_video_audio
         let p = parse_assemble_args(&json!({
             "video_path": "v.mp4",
             "music_path": "m.mp3",
@@ -1115,13 +1115,13 @@ mod tests {
         assert_eq!(p.music_volume, Some(0.4));
         assert_eq!(p.keep_video_audio, Some(true));
 
-        // ไม่มีเสียงอะไรเลย = error
+        // No audio at all = error
         let err = parse_assemble_args(&json!({ "video_path": "v.mp4" })).unwrap_err();
         assert!(err.contains("nothing to assemble"), "got: {err}");
-        // video_path หาย = error
+        // Missing video_path = error
         let err = parse_assemble_args(&json!({ "music_path": "m.mp3" })).unwrap_err();
         assert!(err.contains("video_path"), "got: {err}");
-        // volume นอกช่วง = error
+        // Volume out of range = error
         let err = parse_assemble_args(&json!({
             "video_path": "v.mp4",
             "music_path": "m.mp3",
@@ -1131,7 +1131,7 @@ mod tests {
         assert!(err.contains("0.0 and 1.0"), "got: {err}");
     }
 
-    /// args tts: output_format ตรวจ case + ปฏิเสธค่าที่ไม่รู้จัก
+    /// TTS args: output_format checks case + rejects unknown values
     #[test]
     fn test_parse_tts_args_output_format() {
         let p = parse_tts_args(&json!({"text": "hi", "output_format": "MP3"})).unwrap();
@@ -1142,7 +1142,7 @@ mod tests {
         assert!(err.contains("output_format"), "got: {err}");
     }
 
-    /// args music: ค่าเต็ม, prompt ว่าง (error), style ว่าง (เป็น None)
+    /// Music args: full values, empty prompt (error), empty style (treated as None)
     #[test]
     fn test_parse_music_args() {
         let p = parse_music_args(&json!({
@@ -1153,18 +1153,18 @@ mod tests {
         assert_eq!(p.prompt, "warm acoustic background for a travel vlog");
         assert_eq!(p.style.as_deref(), Some("lo-fi hip hop"));
 
-        // style ไม่บังคับ
+        // style is optional
         let p = parse_music_args(&json!({ "prompt": "epic orchestral intro" })).unwrap();
         assert!(p.style.is_none());
 
         assert!(parse_music_args(&json!({ "prompt": " " })).is_err());
         assert!(parse_music_args(&json!({})).is_err());
-        // style ว่าง/ไม่ใช่ string = None ไม่ใช่ error
+        // empty/non-string style = None, not error
         let p = parse_music_args(&json!({ "prompt": "p", "style": "  " })).unwrap();
         assert!(p.style.is_none());
     }
 
-    /// args video: ค่าเต็ม, number/string duration, validation นอก whitelist
+    /// Video args: full values, number/string duration, non-whitelisted validation
     #[test]
     fn test_parse_video_args() {
         let p = parse_video_args(&json!({
@@ -1182,11 +1182,11 @@ mod tests {
             Some("media/run-x/image-1.jpg")
         );
 
-        // numeric string ก็ผ่าน
+        // numeric string also passes
         let p = parse_video_args(&json!({ "prompt": "x", "duration_seconds": "8" })).unwrap();
         assert_eq!(p.duration_seconds, Some(8));
 
-        // prompt ว่าง / duration ไม่ใช่ตัวเลข / duration นอก whitelist / aspect ผิด
+        // empty prompt / non-numeric duration / duration outside whitelist / invalid aspect
         assert!(parse_video_args(&json!({ "prompt": " " })).is_err());
         let err =
             parse_video_args(&json!({ "prompt": "x", "duration_seconds": "long" })).unwrap_err();
@@ -1197,7 +1197,7 @@ mod tests {
         assert!(err.contains("unsupported aspect_ratio"));
     }
 
-    /// reference image: MIME จากนามสกุล และปฏิเสธชนิดที่ไม่รองรับ
+    /// Reference image: MIME from extension and rejects unsupported types
     #[test]
     fn test_mime_for_reference_image() {
         assert_eq!(

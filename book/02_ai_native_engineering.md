@@ -12,7 +12,7 @@ against `src/` and get a true answer from.
 an accident. Every optional section carries `#[serde(default)]` — `server`, `cli`,
 `commands`, `mcpServers`, `compaction`, `agents`, `media` — so an older config file keeps loading as
 the program grows. If a section is missing, you get the documented default, not a crash.
-Custom prompt shortcuts are declared under `commands` (e.g., `/review`, `/summarize`, `/wiki`), allowing
+Custom prompt shortcuts are declared under `commands` (e.g., `/review`, `/summarize`, `/wiki`, `/post`), allowing
 users to configure reusable REPL prompt macros with argument substitution without recompiling.
 
 Validation is one rule deep, and the code says so itself:

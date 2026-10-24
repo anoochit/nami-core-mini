@@ -1,30 +1,29 @@
-//! เรียก Gemini TTS model ผ่าน `generateContent` + `responseModalities: AUDIO`
+//! Call Gemini TTS model via `generateContent` + `responseModalities: AUDIO`
 //!
-//! spike (2026-10-23) ยืนยันว่า `gemini-3.8-flash-tts` คืน `audio/wav` ที่มี
-//! header ครบ — บันทึกเป็นไฟล์ `.wav` ได้ทันที ไม่ต้องห่อด้วย WAV เอง
-//! เสียงที่คืนเป็น binary — ห้ามส่ง base64 เข้า context ของ agent
-//! (best practice #2 ของ `wiki/multi-model-generation.md`)
+//! Spike on 2026-10-23 confirmed `gemini-3.8-flash-tts` returns `audio/wav` with complete headers —
+//! saved directly as `.wav` file without manual wrapping.
+//! Audio is returned as raw binary — never send base64 into agent context (best practice #2 in
+//! `wiki/multi-model-generation.md`)
 
 use adk_gemini::{GenerationResponse, Part};
 use anyhow::{Context, bail};
 use std::time::Duration;
 
-/// ผลลัพธ์เสียงหนึ่งไฟล์จาก TTS model (ปกติการเรียกหนึ่งครั้งคืน 1 ไฟล์)
+/// Result of a single speech generation call (typically returns 1 file)
 #[derive(Debug)]
 pub struct GeneratedSpeech {
-    /// MIME type ที่ API คืนมาจริง เช่น `audio/wav`
+    /// Actual MIME type returned by the API, e.g. `audio/wav`
     pub mime_type: String,
-    /// ข้อมูลเสียง (ถอด base64 แล้ว)
+    /// Audio binary data (decoded from base64)
     pub data: Vec<u8>,
 }
 
-/// ประกอบ request body สำหรับ TTS
+/// Build request body for TTS
 ///
-/// `emotion` เป็น delivery hint ที่ต่อหน้าข้อความ (Gemini TTS ไม่มี
-/// พารามิเตอร์ style ตรง ๆ — ทิศทางการพูดใส่ใน prompt ได้ตามธรรมชาติของ model)
+/// `emotion` is a delivery hint prepended to text (Gemini TTS lacks direct style parameters —
+/// delivery guidance is expressed naturally in the prompt)
 ///
-/// แยกเป็น pure function เพื่อให้ทดสอบได้โดยไม่ต้องยิง API — รูปแบบผ่าน
-/// spike จริงแล้วเมื่อ 2026-10-23 (voice `Kore` ได้ `audio/wav` 203 KB)
+/// Pure function testable without API calls — structure verified via spike on 2026-10-23
 pub fn build_request_body(text: &str, voice: &str) -> serde_json::Value {
     serde_json::json!({
         "contents": [{ "role": "user", "parts": [{ "text": text }] }],
@@ -37,10 +36,10 @@ pub fn build_request_body(text: &str, voice: &str) -> serde_json::Value {
     })
 }
 
-/// ประกอบข้อความที่จะพูด + delivery hint (อารมณ์/น้ำเสียง)
+/// Combine spoken text with delivery hint (emotion/tone)
 ///
-/// hint อยู่หน้าข้อความจริง เช่น
-/// `Deliver the following in a cheerful tone.\n\nHello from Nami.`
+/// Hint prepended to actual text, e.g.:
+/// `Deliver the following text in a cheerful tone.\n\nHello from Nami.`
 pub fn compose_speech_text(text: &str, emotion: Option<&str>) -> String {
     match emotion {
         Some(e) if !e.trim().is_empty() => format!(
@@ -52,10 +51,9 @@ pub fn compose_speech_text(text: &str, emotion: Option<&str>) -> String {
     }
 }
 
-/// MIME type ของผลลัพธ์ → นามสกุลไฟล์
+/// Map result MIME type to file extension
 ///
-/// model คืน `audio/wav` ในปัจจุบัน — ชนิดอื่น (PCM ดิบ/mp3) map ตามที่ API
-/// คืนมาจริง ไม่เดาเอง
+/// Model currently returns `audio/wav` — other types (raw PCM/mp3) mapped per API result
 pub fn extension_for_mime(mime: &str) -> &'static str {
     let lower = mime.to_ascii_lowercase();
     if lower.starts_with("audio/wav") || lower.starts_with("audio/x-wav") {
@@ -67,10 +65,10 @@ pub fn extension_for_mime(mime: &str) -> &'static str {
     }
 }
 
-/// ประมาณความยาวเสียง (วินาที) จาก WAV header มาตรฐาน (RIFF/PCM)
+/// Estimate audio duration (seconds) from standard WAV header (RIFF/PCM)
 ///
-/// อ่าน `byteRate` (offset 28, u32 LE) แล้วหารขนาดข้อมูล — คืน `None` ถ้า
-/// ไม่ใช่ WAV ที่อ่าน header ได้ (เช่น PCM ดิบ)
+/// Reads `byteRate` (offset 28, u32 LE) and divides data size — returns `None` if
+/// not a standard readable WAV (e.g. raw PCM)
 pub fn estimate_wav_duration_secs(data: &[u8]) -> Option<f64> {
     if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         return None;
@@ -79,12 +77,12 @@ pub fn estimate_wav_duration_secs(data: &[u8]) -> Option<f64> {
     if byte_rate == 0 {
         return None;
     }
-    // header มาตรฐาน PCM ใช้ 44 bytes (RIFF 12 + fmt 24 + data 8)
+    // Standard PCM header uses 44 bytes (RIFF 12 + fmt 24 + data 8)
     let audio_bytes = data.len().saturating_sub(44) as f64;
     Some(audio_bytes / byte_rate as f64)
 }
 
-/// เรียก TTS model หนึ่งครั้ง แล้วคืนไฟล์เสียงทุก candidate (ปกติ 1 ไฟล์)
+/// Call TTS model once and return speech files for all candidates (typically 1 file)
 pub async fn generate(
     api_key: &str,
     model: &str,
@@ -138,7 +136,7 @@ pub async fn generate(
 mod tests {
     use super::*;
 
-    /// body ต้องมี responseModalities ["AUDIO"] + speechConfig.voiceConfig ที่ถูกต้อง
+    /// Request body must contain responseModalities ["AUDIO"] + correct speechConfig.voiceConfig
     #[test]
     fn test_build_request_body() {
         let body = build_request_body("Hello from Nami.", "Kore");
@@ -153,7 +151,7 @@ mod tests {
         );
     }
 
-    /// emotion ถูกต่อเป็น hint หน้าข้อความ; ไม่ระบุ = ข้อความเดิม
+    /// Emotion prepended as hint before text; unassigned = original text
     #[test]
     fn test_compose_speech_text() {
         assert_eq!(compose_speech_text("hi", None), "hi");
@@ -163,7 +161,7 @@ mod tests {
         assert!(composed.ends_with("Hello."));
     }
 
-    /// MIME → นามสกุล (wav/mp3/raw) ตาม type จริง
+    /// MIME → extension (wav/mp3/raw) based on actual type
     #[test]
     fn test_extension_for_mime() {
         assert_eq!(extension_for_mime("audio/wav"), "wav");
@@ -172,10 +170,10 @@ mod tests {
         assert_eq!(extension_for_mime("audio/L16;rate=24000"), "raw");
     }
 
-    /// ประมาณความยาวจาก WAV header ที่ถูกต้อง / คืน None สำหรับของปลอม
+    /// Estimate duration from valid WAV header / return None for invalid header
     #[test]
     fn test_estimate_wav_duration_secs() {
-        // WAV header สมมติ: byteRate = 48000 (24kHz 16-bit mono), data 96000 bytes → 2s
+        // Mock WAV header: byteRate = 48000 (24kHz 16-bit mono), data 96000 bytes → 2s
         let mut wav = vec![0u8; 44 + 96_000];
         wav[0..4].copy_from_slice(b"RIFF");
         wav[8..12].copy_from_slice(b"WAVE");
@@ -185,14 +183,14 @@ mod tests {
 
         assert_eq!(estimate_wav_duration_secs(b"not a wav"), None);
         assert_eq!(estimate_wav_duration_secs(&[0u8; 10]), None);
-        // RIFF แต่ byteRate = 0 → ป้องกันหารด้วยศูนย์
+        // RIFF but byteRate = 0 → prevents divide by zero
         let mut zero_rate = vec![0u8; 44];
         zero_rate[0..4].copy_from_slice(b"RIFF");
         zero_rate[8..12].copy_from_slice(b"WAVE");
         assert_eq!(estimate_wav_duration_secs(&zero_rate), None);
     }
 
-    /// text/voice ว่างต้องถูกปฏิเสธก่อนยิง API (ไม่ต้องใช้คีย์)
+    /// Empty text/voice rejected before API call
     #[tokio::test]
     async fn test_generate_rejects_empty_input() {
         let err = generate("k", "m", "  ", "Kore", Duration::from_secs(1))
@@ -206,12 +204,12 @@ mod tests {
         assert!(err.to_string().contains("voice is empty"));
     }
 
-    /// round-trip กับ API จริง — ต้องมี GOOGLE_API_KEY และเสียเงินเล็กน้อย
-    /// รันด้วย: `cargo test media::tts::tests::test_generate_live -- --ignored`
+    /// Live round-trip with real API — requires GOOGLE_API_KEY
+    /// Run with: `cargo test media::tts::tests::test_generate_live -- --ignored`
     #[tokio::test]
     #[ignore = "requires GOOGLE_API_KEY and makes a real (cheap) API call"]
     async fn test_generate_live() {
-        // test binary ไม่ได้รัน main() จึงต้องโหลด .env เอง (เหมือนที่ nami จริงทำ)
+        // Test binary doesn't run main(), load .env manually
         let _ = dotenvy::dotenv();
         let Ok(key) = crate::media::require_api_key() else {
             eprintln!("skipping: GOOGLE_API_KEY not set");
@@ -232,7 +230,7 @@ mod tests {
             "audio bytes too small: {}",
             speech[0].data.len()
         );
-        // spike ยืนยันว่าคืน audio/wav (RIFF)
+        // Spike confirmed returns audio/wav (RIFF)
         let d = &speech[0].data;
         assert_eq!(&d[0..4], b"RIFF", "expected WAV container");
         let dur = estimate_wav_duration_secs(d).expect("parseable WAV header");

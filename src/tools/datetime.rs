@@ -10,7 +10,7 @@ pub struct DatetimeParams {
     pub timezone: Option<String>,
 }
 
-/// Tool สำหรับดึงวันที่และเวลาปัจจุบัน (Local & UTC)
+/// Tool to get current date and time (Local & UTC)
 pub fn create_datetime_tool() -> Arc<dyn Tool> {
     let tool = FunctionTool::new(
         "get_datetime",

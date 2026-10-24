@@ -16,25 +16,25 @@ pub struct NamiConfig {
     /// Custom slash command prompt shortcuts (e.g. `"review": "Inspect codebase and run cargo test"`)
     #[serde(default)]
     pub commands: HashMap<String, String>,
-    /// การตั้งค่า HTTP Server
+    /// HTTP Server configuration
     #[serde(default)]
     pub server: ServerOptionsConfig,
-    /// การตั้งค่า CLI client
+    /// CLI client configuration
     #[serde(default)]
     pub cli: CliOptionsConfig,
-    /// MCP Servers ทั้ง stdio และ remote ในคีย์ `mcpServers` (รูปแบบ mcp.json)
-    /// entry ที่มี `command` คือ stdio (จัดการโดย `McpServerManager`)
-    /// entry ที่มี `url` คือ remote/streamable-HTTP (เชื่อมต่อโดยตรง)
+    /// MCP Servers (stdio and remote) under `mcpServers` key (mcp.json format)
+    /// Entries with `command` are stdio (managed by `McpServerManager`)
+    /// Entries with `url` are remote/streamable-HTTP (connected directly)
     #[serde(default, rename = "mcpServers")]
     pub mcp_servers: HashMap<String, McpServerEntry>,
-    /// การตั้งค่า Context Compaction (post-run, แบบนับจำนวนรอบสนทนา)
+    /// Context Compaction configuration (post-run, turn-count based)
     #[serde(default)]
     pub compaction: NamiCompactionConfig,
-    /// Sub-Agents แบบ hierarchical — root ส่งงานเฉพาะทางให้ผ่าน `transfer_to_agent`
-    /// แต่ละ entry ถูกสร้างเป็น `LlmAgent` แล้วแนบเป็น sub-agent ของ root
+    /// Hierarchical Sub-Agents — root delegates specialist tasks via `transfer_to_agent`
+    /// Each entry is constructed as `LlmAgent` and attached as a sub-agent of root
     #[serde(default)]
     pub agents: Vec<SubAgentConfig>,
-    /// การตั้งค่า media generation (image/TTS/video ผ่าน Gemini API)
+    /// Media generation configuration (image/TTS/video via Gemini API)
     #[serde(default)]
     pub media: MediaConfig,
 }
@@ -116,19 +116,19 @@ impl CliOptionsConfig {
     }
 }
 
-/// การตั้งค่าแสดงผลใน CLI / REPL (thinking, tool call, tool result, answer label)
+/// CLI / REPL display options (thinking, tool call, tool result, answer label)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisplayOptions {
-    /// แสดงกระบวนการคิดของโมเดล (`🤔 thinking`)
+    /// Show model thinking process (`🤔 thinking`)
     #[serde(default = "default_display_true", alias = "thinking", alias = "show_thinking")]
     pub show_thinking: bool,
-    /// แสดงการเรียกใช้เครื่องมือ (`🔧 name(args)`)
+    /// Show tool invocations (`🔧 name(args)`)
     #[serde(default = "default_display_true", alias = "tool_call", alias = "tool_calls", alias = "show_tool_calls", alias = "show_tool_call")]
     pub show_tool_call: bool,
-    /// แสดงผลลัพธ์ของเครื่องมือ (`✅ name` / `❌ name`)
+    /// Show tool results (`✅ name` / `❌ name`)
     #[serde(default = "default_display_true", alias = "tool_result", alias = "tool_results", alias = "show_tool_results", alias = "show_tool_result")]
     pub show_tool_result: bool,
-    /// แสดงหัวข้อคำตอบ (`💬 answer`)
+    /// Show answer header (`💬 answer`)
     #[serde(default = "default_display_true", alias = "answer", alias = "show_answer", alias = "show_answer_label", alias = "answer_label")]
     pub show_answer: bool,
 }
@@ -145,7 +145,7 @@ impl Default for DisplayOptions {
 }
 
 impl DisplayOptions {
-    /// ปิดการแสดงผลทั้งหมด (แสดงเฉพาะเนื้อหาคำตอบ)
+    /// Disable all display options (show plain answer text only)
     pub fn all_disabled() -> Self {
         Self {
             show_thinking: false,
@@ -155,12 +155,12 @@ impl DisplayOptions {
         }
     }
 
-    /// เปิดการแสดงผลทั้งหมด
+    /// Enable all display options
     pub fn all_enabled() -> Self {
         Self::default()
     }
 
-    /// ตรวจสอบว่ามีการเปิดแสดงผลส่วนย่อยอย่างน้อยหนึ่งอย่างหรือไม่
+    /// Returns true if at least one display section is enabled
     #[allow(dead_code)]
     pub fn has_any_enabled(&self) -> bool {
         self.show_thinking || self.show_tool_call || self.show_tool_result || self.show_answer
@@ -179,105 +179,103 @@ pub struct StorageConfig {
     pub wiki_dir: PathBuf,
 }
 
-/// เครื่องมือ built-in ที่เลือกใส่ sub-agent ได้ผ่านคีย์ `tools`
+/// Built-in tools assignable to sub-agents via `tools` key
 ///
-/// ค่าใน JSON เป็นชื่อตัวพิมพ์เล็ก: `"search"`, `"devtools"`, `"datetime"`, `"weather"`
+/// JSON values are lowercase strings: `"search"`, `"devtools"`, `"datetime"`, `"weather"`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentTool {
-    /// เครื่องมือค้นหา Google ผ่าน Serper (`google_search`)
+    /// Google Search tool via Serper (`google_search`)
     Search,
-    /// Workspace DevTools — อ่าน/เขียนไฟล์ + bash
+    /// Workspace DevTools — file read/write + bash
     Devtools,
-    /// พื้นที่จัดเก็บไฟล์/โฟลเดอร์ในระบบ
+    /// Filesystem tool
     Filesystem,
-    /// เครื่องมือวันที่/เวลา (`get_datetime`)
+    /// Date/time tool (`get_datetime`)
     Datetime,
-    /// เครื่องมือสภาพอากาศ (`get_weather_forecast`)
+    /// Weather tool (`get_weather_forecast`)
     Weather,
-    /// ชุดเครื่องมือ media ผ่าน Gemini API (`generate_image`/`generate_tts`/`generate_music`/`generate_video`)
+    /// Media tools via Gemini API (`generate_image`/`generate_tts`/`generate_music`/`generate_video`)
     Media,
 }
 
-/// นิยาม sub-agent หนึ่งตัวในคีย์ `agents`
+/// Defines a sub-agent entry under `agents` key
 ///
-/// root จะส่งงานให้ผ่าน `transfer_to_agent` โดยใช้ `name` เป็นเป้าหมาย
+/// Root agent delegates specialist tasks via `transfer_to_agent` using `name` as target
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubAgentConfig {
-    /// ชื่อที่ใช้เรียกผ่าน `transfer_to_agent` (ต้องไม่ซ้ำกับ root หรือ sub-agent อื่น)
+    /// Name passed to `transfer_to_agent` (must be unique among root and other sub-agents)
     pub name: String,
-    /// คำอธิบาย — แสดงใน transfer enum และใน guidance ของ root (ถ้าไม่ระบุใช้ชื่อแทน)
+    /// Description shown in transfer enum and root guidance (defaults to name if omitted)
     #[serde(default)]
     pub description: Option<String>,
-    /// system instruction ของ sub-agent
+    /// Sub-agent system instruction
     pub instruction: String,
-    /// เครื่องมือ built-in ที่ sub-agent นี้ใช้ได้ (ค่าว่าง = ไม่มีเครื่องมือ)
+    /// Built-in tools enabled for this sub-agent (empty = no tools)
     #[serde(default)]
     pub tools: Vec<AgentTool>,
-    /// model ที่ใช้เฉพาะ sub-agent นี้ (ถ้าไม่ระบุจะใช้ model ของ root)
+    /// Model override for this sub-agent (inherits root model if omitted)
     #[serde(default)]
     pub model: Option<String>,
-    /// เมื่อ `true` จะข้าม sub-agent ตัวนี้ไม่ลงทะเบียน
+    /// When `true`, this sub-agent is skipped during registration
     #[serde(default)]
     pub disabled: bool,
 }
 
 impl SubAgentConfig {
-    /// คำอธิบายสำหรับ transfer enum/guidance — ใช้ชื่อแทนเมื่อไม่ได้ระบุ
+    /// Description for transfer enum / guidance — uses name if omitted
     pub fn effective_description(&self) -> &str {
         self.description.as_deref().unwrap_or(&self.name)
     }
 }
 
-/// หนึ่ง entry ในคีย์ `mcpServers` (รูปแบบ mcp.json)
+/// Single entry in `mcpServers` key (mcp.json format)
 ///
-/// แยก stdio ออกจาก remote ตาม field ที่มี: มี `command` คือ stdio,
-/// มี `url` คือ remote/streamable-HTTP — ทั้งสองชนิดอยู่ในคีย์เดียวกัน
+/// Distinguishes stdio from remote by field presence: `command` indicates stdio,
+/// `url` indicates remote/streamable-HTTP.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum McpServerEntry {
-    /// stdio server — จัดการโดย `McpServerManager` (ต้องมี `command`)
+    /// stdio server — managed by `McpServerManager` (requires `command`)
     Stdio(McpServerConfig),
-    /// remote server — เชื่อมต่อโดยตรงผ่าน streamable HTTP (ต้องมี `url`)
+    /// remote server — connected directly via streamable HTTP (requires `url`)
     Remote(RemoteMcpServerConfig),
 }
 
-/// คอนฟิกสำหรับ MCP Server ระยะไกลเชื่อมต่อผ่าน streamable HTTP
+/// Configuration for remote MCP Server connected via streamable HTTP
 ///
-/// อยู่รวมกับ stdio ในคีย์ `mcpServers` — ดู [`McpServerEntry`]
+/// Co-located with stdio under `mcpServers` key — see [`McpServerEntry`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteMcpServerConfig {
-    /// endpoint ของ MCP server เช่น `https://mcp.example.com/v1`
+    /// Endpoint URL of MCP server, e.g. `https://mcp.example.com/v1`
     pub url: String,
-    /// เมื่อ `true` จะข้าม server ตัวนี้ไม่พยายามเชื่อมต่อ
+    /// When `true`, skips connecting to this server
     #[serde(default)]
     pub disabled: bool,
-    /// header เพิ่มเติมที่แนบไปกับทุกคำขอ เช่น `X-Api-Key`
+    /// Custom HTTP headers attached to every request, e.g. `X-Api-Key`
     #[serde(default)]
     pub headers: HashMap<String, String>,
-    /// bearer token สั้น ๆ สำหรับ `Authorization: Bearer ...` (ใช้ `headers` สำหรับกรณีซับซ้อน)
+    /// Bearer token for `Authorization: Bearer ...` (use `headers` for complex auth)
     #[serde(default)]
     pub bearer_token: Option<String>,
 }
 
-/// คอนฟิก Context Compaction ระดับแอป
+/// Application Context Compaction configuration
 ///
-/// กลไกที่ใช้ได้กับ wrapper ปัจจุบันคือ **post-run แบบนับจำนวนรอบสนทนา** (`compaction_interval`)
-/// ไม่ใช่เปอร์เซ็นต์ของ context window — การกระตุ้นแบบ token-budget ("70% ของ context")
-/// ต้องสร้าง `Runner` โดยตรงซึ่ง `Launcher`/`ServerConfig` ใน adk-rust 2.3.0 ไม่เปิดให้ตั้งค่า
+/// Uses post-run turn-count interval (`compaction_interval`)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamiCompactionConfig {
-    /// เปิด/ปิดการ compaction (เมื่อ `false` จะไม่แนบ `EventsCompactionConfig` เลย)
+    /// Enable/disable compaction (when `false`, `EventsCompactionConfig` is omitted)
     #[serde(default = "default_compaction_enabled")]
     pub enabled: bool,
-    /// จำนวนรอบสนทนา (invocations) ที่เสร็จสมบูรณ์ก่อนกระตุ้น compaction
+    /// Number of completed conversation invocations before triggering compaction
     #[serde(default = "default_compaction_interval")]
     pub compaction_interval: u32,
-    /// จำนวน event จากหน้าต่างก่อนหน้าที่ส่งต่อไปยังการสรุปถัดไปเพื่อความต่อเนื่อง
+    /// Number of events carried over from previous window for summary continuity
     #[serde(default = "default_overlap_size")]
     pub overlap_size: u32,
-    /// context window ของโมเดล (tokens) — ใช้อ้างอิง/окументในอนาคตสำหรับการกระตุ้นแบบ token-budget
+    /// Model context window size in tokens (documentation reference)
     #[serde(default = "default_context_window")]
     pub context_window: u64,
 }
@@ -306,42 +304,36 @@ impl Default for NamiCompactionConfig {
     }
 }
 
-/// การตั้งค่า media generation (image / TTS / music / video ผ่าน Gemini API)
+/// Media generation configuration (image / TTS / music / video via Gemini API)
 ///
-/// ค่าทุก field มี default — ไม่ใส่คีย์ `media` ใน nami.json ก็โหลดได้
-/// โมเดล/เสียง/ID โมเดลวิดีโอ ระบุในคอนฟิกเท่านั้น (ห้าม hardcode ในโค้ด) เพราะ
-/// model IDs ของ Google เปลี่ยนบ่อย — ค่า default ด้านล่างผ่านการ spike
-/// ด้วย API call จริงเมื่อ 2026-10-23 (ดู `wiki/multimodal-generation-plan.md`)
+/// All fields have defaults — omitting `media` key in nami.json will load defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaConfig {
-    /// เปิด/ปิดชุดเครื่องมือ media (เมื่อ `false` sub-agent ที่เลือก `media`
-    /// จะไม่ได้เครื่องมือใด ๆ และได้รับ warning ตอน start)
+    /// Enable/disable media toolset (when `false`, sub-agents requesting `media` receive no tools)
     #[serde(default = "default_media_enabled")]
     pub enabled: bool,
-    /// โมเดลสร้างภาพ — คืน inlineData เป็น image/jpeg
+    /// Image generation model — returns inlineData as image/jpeg
     #[serde(default = "default_media_image_model")]
     pub image_model: String,
-    /// โมเดล text-to-speech — คืน inlineData เป็น audio/wav (PCM ห่อด้วย WAV header แล้ว)
+    /// Text-to-speech model — returns inlineData as audio/wav
     #[serde(default = "default_media_tts_model")]
     pub tts_model: String,
-    /// voice ที่ใช้กับ TTS (prebuilt voice ของ Gemini)
+    /// Voice for TTS (Gemini prebuilt voice)
     #[serde(default = "default_media_tts_voice")]
     pub tts_voice: String,
-    /// โมเดลสร้างวิดีโอ — ต้องเป็นโมเดลที่รับ Interactions API (เช่น `gemini-omni-1.1-flash`)
-    /// ส่วน Veo ถูกถอนออกแล้ว (ยิงจริงได้ 404 — ดู `wiki/multimodal-generation-plan.md`)
+    /// Video generation model — must support Interactions API
     #[serde(default = "default_media_video_model")]
     pub video_model: String,
-    /// โมเดลสร้างดนตรี (Lyria) — คืน inlineData เป็น audio/mpeg (คลิป ~30 วินาที คงที่
-    /// ไม่มี parameter ควบคุมความยาว — spike 2026-10-23 ยืนยัน)
+    /// Music generation model (Lyria) — returns inlineData as audio/mpeg (~30s clip)
     #[serde(default = "default_media_music_model")]
     pub music_model: String,
-    /// ไดเรกทอรีเก็บผลลัพธ์ — สร้าง run dir ย่อย `run-<ts>-<id>` ต่อการเรียก tool หนึ่งครั้ง
+    /// Output directory for generated media files
     #[serde(default = "default_media_output_dir")]
     pub output_dir: PathBuf,
-    /// ระยะเวลารอระหว่าง poll interaction ของ video model (วินาที)
+    /// Poll interval between video interaction checks (seconds)
     #[serde(default = "default_media_poll_interval_secs")]
     pub poll_interval_secs: u64,
-    /// เวลาสูงสุดต่อการเรียก tool หนึ่งครั้ง (วินาที) — กัน video call ค้างค่า
+    /// Maximum execution time per tool invocation (seconds)
     #[serde(default = "default_media_timeout_secs")]
     pub timeout_secs: u64,
 }
@@ -391,9 +383,9 @@ impl Default for MediaConfig {
 }
 
 impl NamiConfig {
-    /// ค้นหาและโหลดไฟล์ `nami.json` จากตำแหน่งที่เป็นไปได้
+    /// Search for and load default `nami.json`
     ///
-    /// รองรับทั้งการรันจากไดเรกทอรีโปรเจกต์เอง (`./nami.json`)
+    /// Supports loading from project root directory (`./nami.json`)
     pub fn load_default() -> anyhow::Result<Self> {
         if Path::new("nami.json").exists() {
             Self::load_from_file("nami.json")
@@ -425,7 +417,7 @@ impl NamiConfig {
         Ok(())
     }
 
-    /// stdio servers (มี `command`) จากคีย์ `mcpServers` — ส่งให้ `McpServerManager`
+    /// stdio servers (with `command`) from `mcpServers` — passed to `McpServerManager`
     pub fn stdio_servers(&self) -> HashMap<String, McpServerConfig> {
         self.mcp_servers
             .iter()
@@ -436,7 +428,7 @@ impl NamiConfig {
             .collect()
     }
 
-    /// remote servers (มี `url`) จากคีย์ `mcpServers` — เชื่อมต่อโดยตรงผ่าน streamable HTTP
+    /// Remote servers (with `url`) from `mcpServers` — connected via streamable HTTP
     pub fn remote_servers(&self) -> Vec<(String, RemoteMcpServerConfig)> {
         self.mcp_servers
             .iter()
@@ -447,7 +439,7 @@ impl NamiConfig {
             .collect()
     }
 
-    /// sub-agents ที่ยังไม่ถูก `disabled` — เรียงตามลำดับในคอนฟิก
+    /// Enabled sub-agents (not `disabled`) in config order
     pub fn enabled_agents(&self) -> impl Iterator<Item = &SubAgentConfig> {
         self.agents.iter().filter(|a| !a.disabled)
     }
@@ -546,7 +538,7 @@ mod tests {
         assert!(!display.show_tool_call);
         assert!(display.show_tool_result);
     }
-    /// แล้วแยกกันตาม field ที่มี — รูปแบบ mcp.json
+    /// Split into stdio and remote by present fields — mcp.json format
     #[test]
     fn test_mcp_servers_split_stdio_and_remote() {
         let json = r#"{
@@ -573,7 +565,7 @@ mod tests {
         assert!(remote[0].1.disabled);
     }
 
-    /// ไม่มีคีย์ `mcpServers` ต้องไม่ error — คืน map ว่าง
+    /// Missing `mcpServers` key must not error — returns empty map
     #[test]
     fn test_mcp_servers_absent_is_empty() {
         let json = r#"{
@@ -588,7 +580,7 @@ mod tests {
         assert!(config.remote_servers().is_empty());
     }
 
-    /// คีย์ `agents` parse เป็น `SubAgentConfig` + `AgentTool` และ `disabled` ถูกกรองออก
+    /// `agents` key parses as `SubAgentConfig` + `AgentTool`, and `disabled` agents are filtered out
     #[test]
     fn test_agents_parse_and_enabled_filter() {
         let json = r#"{
@@ -617,11 +609,11 @@ mod tests {
         assert_eq!(enabled[1].name, "coder");
         assert_eq!(enabled[1].model.as_deref(), Some("x"));
 
-        // ไม่ระบุ description ต้อง fallback ไปใช้ชื่อ
+        // Missing description falls back to name
         assert_eq!(enabled[0].effective_description(), "researcher");
     }
 
-    /// ไม่มีคีย์ `agents` ต้องไม่ error — คืนลิสต์ว่าง
+    /// Missing `agents` key must not error — returns empty list
     #[test]
     fn test_agents_absent_is_empty() {
         let json = r#"{
@@ -636,7 +628,7 @@ mod tests {
         assert_eq!(config.enabled_agents().count(), 0);
     }
 
-    /// ไม่มีคีย์ `media` ต้องไม่ error — ใช้ default (ปิดอยู่, model IDs ที่ spike ไว้)
+    /// Missing `media` key must not error — uses defaults
     #[test]
     fn test_media_absent_uses_defaults() {
         let json = r#"{
@@ -658,7 +650,7 @@ mod tests {
         assert_eq!(config.media.timeout_secs, 600);
     }
 
-    /// คีย์ `media` บางส่วนต้อง merge กับ default (field ที่ไม่ระบุยังได้ค่า default)
+    /// Partial `media` key merges with defaults
     #[test]
     fn test_media_partial_section_merges_defaults() {
         let json = r#"{
@@ -673,13 +665,13 @@ mod tests {
         assert!(config.media.enabled);
         assert_eq!(config.media.tts_voice, "Puck");
         assert_eq!(config.media.output_dir, PathBuf::from("./out"));
-        // field ที่ไม่ได้ระบุยังเป็น default
+        // Unspecified fields remain default
         assert_eq!(config.media.image_model, "gemini-3.1-flash-image");
         assert_eq!(config.media.music_model, "lyria-3-clip-preview");
         assert_eq!(config.media.timeout_secs, 600);
     }
 
-    /// `temperature` นอกช่วง 0.0–2.0 ต้อง fail ตอนโหลด ไม่ใช่ตอนยิง request ทุกครั้ง
+    /// `temperature` out of range 0.0–2.0 fails validate
     #[test]
     fn test_temperature_out_of_range_fails_validate() {
         let json = r#"{
@@ -693,7 +685,7 @@ mod tests {
         assert!(config.validate().is_err());
     }
 
-    /// ค่าในช่วงที่ถูกต้อง (รวมขอบ 0.0 กับ 2.0) และการไม่ระบุค่า ต้องผ่าน validate
+    /// Temperature in valid range (0.0 to 2.0) passes validate
     #[test]
     fn test_temperature_in_range_passes_validate() {
         let json = r#"{

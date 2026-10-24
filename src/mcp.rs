@@ -5,14 +5,14 @@ use adk_rust::tool::mcp::{McpAuth, McpHttpClientBuilder, McpToolset};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// ค้นหาและตรวจสอบ path ของ executable แบบ cross-platform (Windows, Linux, macOS)
+/// Cross-platform executable resolution (Windows, Linux, macOS)
 ///
-/// ป้องกันปัญหา `program not found` เมื่อรัน subprocess Tool / MCP / DevTools:
-/// - Windows: ค้นหาใน PATH ร่วมกับ PATHEXT (เช่น `.exe`, `.cmd`, `.bat`) หากไม่ระบุนามสกุล
-/// - Linux/macOS: ค้นหาใน PATH และจัดการ fallback สำหรับคำสั่งยอดนิยม เช่น `python` -> `python3`
+/// Prevents `program not found` errors when running subprocess Tool / MCP / DevTools:
+/// - Windows: Searches PATH with PATHEXT extensions (e.g., `.exe`, `.cmd`, `.bat`) if unextensioned
+/// - Linux/macOS: Searches PATH and handles fallbacks for common commands such as `python` -> `python3`
 pub fn resolve_executable(cmd: &str) -> String {
     let path = std::path::Path::new(cmd);
-    // ถ้าระบุ absolute path หรือ path ที่มี separator อยู่แล้ว ให้ใช้ค่าเดิม
+    // Return original string if absolute path or already contains path separator
     if path.is_absolute() || cmd.contains('/') || cmd.contains('\\') {
         return cmd.to_string();
     }
@@ -45,7 +45,7 @@ pub fn resolve_executable(cmd: &str) -> String {
             }
         }
 
-        // Fallback บน Windows สำหรับ CLI tools ของ Node/Python หากหาใน PATH ไม่พบ
+        // Fallback on Windows for Node/Python CLI tools if not found in PATH
         if !has_ext
             && matches!(
                 cmd,
@@ -55,7 +55,7 @@ pub fn resolve_executable(cmd: &str) -> String {
             return format!("{}.cmd", cmd);
         }
     } else {
-        // Linux & macOS: ค้นหาใน PATH
+        // Linux & macOS: search PATH
         if let Some(path_var) = std::env::var_os("PATH") {
             for dir in std::env::split_paths(&path_var) {
                 let candidate = dir.join(cmd);
@@ -65,7 +65,7 @@ pub fn resolve_executable(cmd: &str) -> String {
             }
         }
 
-        // Fallback สำหรับ Unix: ถ้าเรียก `python` แล้วไม่พบ ให้ลองหา `python3`
+        // Fallback on Unix: try python3 if python is not found
         if cmd == "python"
             && let Some(path_var) = std::env::var_os("PATH")
         {
@@ -81,10 +81,10 @@ pub fn resolve_executable(cmd: &str) -> String {
     cmd.to_string()
 }
 
-/// โหลดและเริ่ม MCP Servers แบบ stdio (มี `command`) จากคีย์ `mcpServers`
+/// Load and start stdio MCP Servers (with `command`) from `mcpServers` key
 ///
-/// คืนค่า `Some(manager)` เมื่อมี stdio server และสร้าง Manager สำเร็จ
-/// มิฉะนั้นจะคืนค่า `None` เพื่อให้ Agent ทำงานได้ต่อโดยไม่มี MCP Toolset
+/// Returns `Some(manager)` when stdio servers are configured and initialized.
+/// Returns `None` otherwise so Agent can continue without MCP toolsets.
 pub async fn load_mcp_manager(
     servers: HashMap<String, McpServerConfig>,
 ) -> Option<Arc<McpServerManager>> {
@@ -92,8 +92,7 @@ pub async fn load_mcp_manager(
         return None;
     }
 
-    // สร้าง JSON ชั่วคราวในรูป mcp.json เพื่อใช้ `from_json`
-    // (คงการ validate server ID ให้ตรงกับการอ่านไฟล์แบบเดิม)
+    // Build temporary JSON in mcp.json format for `from_json`
     let json = serde_json::json!({ "mcpServers": servers }).to_string();
     let manager = match McpServerManager::from_json(&json) {
         Ok(manager) => Arc::new(manager),
@@ -103,7 +102,7 @@ pub async fn load_mcp_manager(
         }
     };
 
-    // ปรับแก้ command ของ MCP Server แต่ละตัวให้รองรับ cross-platform (Windows, Linux, macOS)
+    // Resolve command path for each MCP server for cross-platform support
     for (id, config) in manager.all_configs().await {
         let resolved = resolve_executable(&config.command);
         if resolved != config.command {
@@ -128,11 +127,10 @@ pub async fn load_mcp_manager(
     Some(manager)
 }
 
-/// โหลดและเชื่อมต่อ MCP Servers ระยะไกล (มี `url`) จากคีย์ `mcpServers`
+/// Load and connect remote MCP Servers (with `url`) from `mcpServers` key
 ///
-/// ต่างจาก stdio ที่จัดการผ่าน `McpServerManager` ตัวนี้เชื่อมต่อโดยตรงผ่าน
-/// streamable HTTP และคืนเฉพาะ server ที่เชื่อมต่อสำเร็จ — server ที่ล้มเหลว
-/// ถูกข้ามพร้อมบันทึก warning เพื่อให้ agent ทำงานต่อได้ตามปกติ
+/// Connects directly via streamable HTTP and returns successfully connected toolsets.
+/// Failed connections are skipped with warnings so agent operation continues.
 pub async fn load_mcp_remote_toolsets(config: &NamiConfig) -> Vec<Arc<dyn Toolset>> {
     let mut toolsets: Vec<Arc<dyn Toolset>> = Vec::new();
     for (id, server) in config.remote_servers() {
@@ -156,7 +154,7 @@ pub async fn load_mcp_remote_toolsets(config: &NamiConfig) -> Vec<Arc<dyn Toolse
     toolsets
 }
 
-/// เปิดการเชื่อมต่อเดียวไปยัง MCP server ระยะไกล และตั้งชื่อ toolset ตาม server id
+/// Open single connection to remote MCP server and name toolset using server ID
 async fn connect_remote_server(
     id: &str,
     server: &RemoteMcpServerConfig,

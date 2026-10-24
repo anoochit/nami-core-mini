@@ -1,62 +1,62 @@
-//! `manifest.json` ต่อการเรียก tool หนึ่งครั้ง — กลไก traceability ตาม
-//! wiki/multi-model-generation.md §4.3 (เก็บ intermediate artifacts ทุกชิ้น
-//! เพื่อ debug และ selective regeneration)
+//! `manifest.json` per tool invocation — traceability mechanism per
+//! wiki/multi-model-generation.md §4.3 (stores all intermediate artifacts for
+//! debugging and selective regeneration)
 //!
-//! น้ำหนักเบา: serialize/deserialize ล้วน ไม่มี I/O นอก `save()`
+//! Lightweight: pure serialization/deserialization without I/O except `save()`
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-/// ไฟล์ output หนึ่งไฟล์ที่เครื่องมือเขียนลง run dir
+/// Single output file entry written by a tool to run dir
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OutputEntry {
-    /// ชื่อไฟล์ relative กับ run dir เช่น `scene-1.jpg` (เก็บชื่อสั้น ๆ ไม่ใช่ path เต็ม)
+    /// Relative filename within run dir, e.g. `scene-1.jpg` (stores short filename, not full path)
     pub path: String,
-    /// MIME type ที่ API คืนมาจริง (เช่น `image/jpeg`, `audio/wav`) — ห้ามเดาเอง
+    /// Actual MIME type returned by API (e.g. `image/jpeg`, `audio/wav`) — do not guess
     pub mime_type: String,
-    /// ขนาดไฟล์เป็น byte
+    /// File size in bytes
     pub bytes: u64,
-    /// ประมาณความยาวเสียง (วินาที) — มีเฉพาะ output ที่เป็นเสียง (WAV header parse ได้)
+    /// Estimated audio duration (seconds) — only present for audio outputs (parsed from WAV header)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_seconds: Option<f64>,
 }
 
-/// manifest ของการเรียก tool media หนึ่งครั้ง
+/// Manifest for a single media tool execution
 ///
-/// เขียนลง `<run_dir>/manifest.json` ผ่าน [`Manifest::save`] — เป็น output
-/// อย่างเดียว จึง derive เฉพาะ `Serialize` (ไม่มีฝั่งไหนอ่านกลับเป็น struct)
+/// Saved to `<run_dir>/manifest.json` via [`Manifest::save`] — output-only struct,
+/// so it derives `Serialize` only (never read back into a struct).
 #[derive(Debug, Clone, Serialize)]
 pub struct Manifest {
-    /// เวอร์ชันของ schema นี้ — เพิ่มเมื่อเปลี่ยนรูปแบบในอนาคต
+    /// Schema version — incremented for future format changes
     pub schema_version: u32,
-    /// ชื่อเครื่องมือที่เรียก เช่น `generate_image`
+    /// Tool name invoked, e.g. `generate_image`
     pub tool: String,
-    /// model ID ที่ใช้จริง (จาก `media.*_model` ใน nami.json)
+    /// Model ID actually used (from `media.*_model` in nami.json)
     pub model: String,
-    /// prompt / text ต้นฉบับที่ส่งให้ model
+    /// Original prompt / text submitted to model
     pub prompt: String,
-    /// พารามิเตอร์เฉพาะเครื่องมือ (aspect_ratio, voice_id ฯลฯ) เก็บเป็น JSON ดิบ
+    /// Tool-specific parameters (aspect_ratio, voice_id, etc.) stored as raw JSON
     pub params: serde_json::Value,
-    /// ไฟล์ที่เขียนลง run dir ทั้งหมดของการเรียกนี้
+    /// All output files written to run dir during this invocation
     pub outputs: Vec<OutputEntry>,
-    /// "running" ตอนเริ่ม, "ok" หรือ "error" หลัง [`Manifest::finish_ok`] / [`Manifest::finish_err`]
+    /// "running" initially, "ok" or "error" after [`Manifest::finish_ok`] / [`Manifest::finish_err`]
     pub status: String,
-    /// ข้อความ error เมื่อ `status == "error"`
+    /// Error message when `status == "error"`
     pub error: Option<String>,
-    /// เวลาเริ่ม (RFC3339, UTC)
+    /// Start timestamp (RFC3339, UTC)
     pub started_at: String,
-    /// เวลาเสร็จ (RFC3339, UTC) — `None` ขณะยัง running
+    /// Finish timestamp (RFC3339, UTC) — `None` while running
     pub finished_at: Option<String>,
-    /// ระยะเวลาทำการจริง (ms) — คำนวณจาก `started` ตอน finish
+    /// Execution duration (ms) — calculated from `started` at finish
     pub duration_ms: Option<u64>,
-    /// นาฬิกาจริงตอน start — ไม่ถูก serialize (ใช้คำนวณ `duration_ms` เท่านั้น)
+    /// Monotonic instant at start — skipped from serialization (used only to calculate `duration_ms`)
     #[serde(skip)]
     started: Instant,
 }
 
 impl Manifest {
-    /// เริ่ม manifest ใหม่ (status = "running", จับเวลาไว้แล้ว)
+    /// Start a new manifest (status = "running", start timer)
     pub fn start(tool: &str, model: &str, prompt: &str, params: serde_json::Value) -> Self {
         Self {
             schema_version: 1,
@@ -74,10 +74,10 @@ impl Manifest {
         }
     }
 
-    /// บันทึก output หนึ่งไฟล์ (เรียกได้หลายครั้ง — หลายไฟล์ต่อการเรียกเดียว)
+    /// Record an output file (can be called multiple times for multi-file outputs)
     ///
-    /// คืน `&mut` ของ entry ที่เพิ่ม เพื่อให้ตั้ง field เฉพาะชนิดได้ เช่น
-    /// `duration_seconds` ของไฟล์เสียง
+    /// Returns `&mut` of the newly added entry to allow setting specific fields, such as
+    /// `duration_seconds` for audio files.
     pub fn add_output(
         &mut self,
         path: impl Into<String>,
@@ -93,12 +93,12 @@ impl Manifest {
         self.outputs.last_mut().expect("entry just pushed")
     }
 
-    /// ทำเครื่องหมายว่าสำเร็จ (status = "ok") และจับเวลาจบ
+    /// Mark manifest as successful (status = "ok") and stop timer
     pub fn finish_ok(&mut self) {
         self.finish("ok", None);
     }
 
-    /// ทำเครื่องหมายว่าล้มเหลว (status = "error") พร้อมข้อความ
+    /// Mark manifest as failed (status = "error") with error message
     pub fn finish_err(&mut self, error: &str) {
         self.finish("error", Some(error.to_string()));
     }
@@ -110,7 +110,7 @@ impl Manifest {
         self.duration_ms = Some(self.started.elapsed().as_millis() as u64);
     }
 
-    /// เขียนลง `<run_dir>/manifest.json` (pretty JSON)
+    /// Save manifest to `<run_dir>/manifest.json` (pretty JSON)
     pub fn save(&self, run_dir: &Path) -> anyhow::Result<PathBuf> {
         let path = run_dir.join("manifest.json");
         let json = serde_json::to_string_pretty(self)
@@ -125,8 +125,8 @@ impl Manifest {
 mod tests {
     use super::*;
 
-    /// start → add_output → finish_ok → save แล้วอ่านไฟล์กลับเป็น JSON: field ครบ,
-    /// status "ok", outputs ถูกต้อง, duration ถูกจับไว้
+    /// start → add_output → finish_ok → save and read back JSON: check fields,
+    /// status "ok", correct outputs, duration recorded
     #[test]
     fn test_manifest_round_trip() {
         let dir = std::env::temp_dir().join(format!("nami-manifest-test-{}", uuid::Uuid::new_v4()));
@@ -139,7 +139,7 @@ mod tests {
             serde_json::json!({ "aspect_ratio": "16:9" }),
         );
         m.add_output("wave.jpg", "image/jpeg", 668_152);
-        // add_output คืน &mut entry — ตั้ง duration ของไฟล์เสียงได้
+        // add_output returns &mut entry — allow setting duration on audio files
         m.add_output("speech-1.wav", "audio/wav", 203_876)
             .duration_seconds = Some(4.25);
         m.finish_ok();
@@ -170,7 +170,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// finish_err ต้องเซ็ต status "error" + error message และยัง save ได้
+    /// finish_err must set status "error" + error message and remain savable
     #[test]
     fn test_manifest_finish_err() {
         let mut m = Manifest::start(
@@ -185,7 +185,7 @@ mod tests {
         assert!(m.duration_ms.is_some());
     }
 
-    /// status เริ่มต้นต้องเป็น "running" และ output ยังว่าง
+    /// Initial status must be "running" with empty outputs
     #[test]
     fn test_manifest_starts_running() {
         let m = Manifest::start(

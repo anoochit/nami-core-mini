@@ -12,10 +12,10 @@ use adk_rust::tool::mcp::manager::McpServerManager;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// ผลลัพธ์การสร้าง agent: ตัว agent เอง และด้ามจับ `McpServerManager` (ถ้ามี)
+/// Agent creation result: the agent instance itself and the `McpServerManager` handle (if active).
 ///
-/// ด้ามจับถูกส่งคืนเพื่อให้ `main` เรียก `shutdown()` ก่อนหยุดโปรแกรม
-/// ไม่เช่นนั้น `McpServerManager` จะถูก drop ขณะที่ยังมี server ทำงานอยู่ (เกิด warning)
+/// The handle is returned so `main` can invoke `shutdown()` prior to application exit,
+/// preventing the `McpServerManager` from being dropped while servers are active.
 pub struct NamiAgent {
     pub agent: Arc<dyn Agent>,
     pub mcp_manager: Option<Arc<McpServerManager>>,
@@ -42,13 +42,13 @@ pub async fn build_nami_agent(
 ) -> anyhow::Result<NamiAgent> {
     let model = build_model(config)?;
 
-    // 1. ตั้งค่า Workspace DevTools ตาม nami.json (ใช้ซ้ำโดย sub-agent `coder`)
+    // 1. Configure Workspace DevTools according to nami.json (reused by `coder` sub-agent)
     let dev_toolset = build_dev_toolset(config);
 
     // 2. Retry & Reflect plugin — intercepts tool failures and injects reflection prompts
     //    so the model can self-correct on the next turn instead of failing outright.
-    //    ตัวเดียวใช้ร่วมกันทุก agent (root + sub-agents): retry ถูกนับต่อ invocation
-    //    และการ transfer ไป sub-agent ยังอยู่ใน invocation เดียวกัน จึงแชร์ budget ถูกต้อง
+    //    Shared across all agents (root + sub-agents): retries are counted per invocation
+    //    and transferring to a sub-agent remains in the same invocation, sharing budget correctly.
     let retry_reflect_plugin: Arc<dyn adk_rust::plugin::EnhancedPlugin> = Arc::new(
         RetryReflectPluginBuilder::new()
             .max_retries(3)
@@ -58,10 +58,10 @@ pub async fn build_nami_agent(
             .map_err(|e| anyhow::anyhow!("invalid retry-reflect config: {e}"))?,
     );
 
-    // 3. system instruction ของ root + คำแนะนำการส่งต่องานให้ specialist (gen จาก `agents`)
-    //    adk-agent เลือก skill ที่ match กับข้อความผู้ใช้แล้วฉีดเข้า "user turn" (ไม่ใช่
-    //    system instruction) จึงไม่ผ่าน `inject_session_state` — skill body ที่มี `{id}`
-    //    เช่น `POST /runs/{id}/wake` จึงไม่ error "State variable 'id' not found"
+    // 3. System instruction for root + delegation guidance for specialists (generated from `agents`)
+    //    adk-agent selects matching skills and injects them into user turn (not system instruction)
+    //    so it bypasses `inject_session_state` — skill bodies with `{id}` like `POST /runs/{id}/wake`
+    //    will not trigger "State variable 'id' not found" errors.
     let system_instruction = {
         let base = config.system_instruction.clone();
         match root_delegation_guidance(config) {
@@ -70,21 +70,21 @@ pub async fn build_nami_agent(
         }
     };
 
-    // 4. โหลดและจัดการ MCP Servers (stdio) จากคีย์ `mcpServers` ใน nami.json
+    // 4. Load and manage MCP Servers (stdio) from `mcpServers` in nami.json
     let mcp_manager = load_mcp_manager(config.stdio_servers()).await;
-    // เก็บด้ามจับไว้ให้ `main` เรียก `shutdown()` — ไม่เช่นนั้น server จะยังทำงานอยู่ตอน drop
+    // Hold handle so `main` can call `shutdown()` on exit
     let mcp_manager_handle = mcp_manager.clone();
 
-    //    MCP Servers ระยะไกล (remote/streamable-HTTP) จากคีย์ `mcpServers` (มี `url`)
+    //    Remote MCP Servers (remote/streamable-HTTP) from `mcpServers` (with `url`)
     let mcp_remote_toolsets = crate::mcp::load_mcp_remote_toolsets(config).await;
 
-    // 5. สร้าง Sub-Agents (hierarchical) จากคีย์ `agents` ใน nami.json
+    // 5. Create Sub-Agents (hierarchical) from `agents` in nami.json
     //
-    // `LlmAgentBuilder::sub_agent()` แนบ `Arc<dyn Agent>` และ adk-rust จะฉีด tool
-    // `transfer_to_agent` ให้โมเดลโดยอัตโนมัติเมื่อมี sub-agent อย่างน้อยหนึ่งตัว
+    // `LlmAgentBuilder::sub_agent()` attaches `Arc<dyn Agent>` and adk-rust automatically
+    // injects the `transfer_to_agent` tool when at least one sub-agent is present.
     let mut sub_agents: Vec<Arc<dyn Agent>> = Vec::new();
     for spec in config.enabled_agents() {
-        // model ของ sub-agent: ใช้ของตัวเองถ้าระบุในคอนฟิก มิฉะนั้นใช้ model ของ root
+        // Sub-agent model: use override if specified, otherwise inherit root model
         let sub_model = match &spec.model {
             Some(override_model) => build_model_with(config, Some(override_model))?,
             None => model.clone(),
@@ -94,8 +94,7 @@ pub async fn build_nami_agent(
             .description(spec.effective_description())
             .instruction(&spec.instruction)
             .model(sub_model)
-            // sub-agent ก็โหลด skill จาก `.skills/` ได้ — adk-skill ฉีดเฉพาะ skill ที่
-            // คะแนน match กับงานที่รับมา (เช่น `multimodal-pipeline` เมื่อทำสื่อ)
+            // Sub-agents load skills from `.skills/` — adk-skill injects only matching skills
             .with_auto_skills()?
             .enhanced_plugin(retry_reflect_plugin.clone());
 
@@ -104,12 +103,12 @@ pub async fn build_nami_agent(
             sub_builder = sub_builder.temperature(temperature);
         }
 
-        // media tools ทุกตัวเขียนคนละไฟล์ต่อการเรียก (concurrency-safe) — ใช้
-        // parallel execution เมื่อ sub-agent ตัวนี้มี media เพื่อให้ asset หลายชิ้น
-        // ที่ model เรียกพร้อมกันใน one response ถูก generate จริงแบบขนาน
+        // Each media tool invocation writes to its own file (concurrency-safe) — enable
+        // parallel execution for sub-agents with media tools so multiple assets in one response
+        // can be generated concurrently.
         let has_media_tools = spec.tools.contains(&AgentTool::Media);
 
-        // แนบเครื่องมือ built-in ตาม allowlist ในคอนฟิก
+        // Attach built-in tools per allowlist in config
         let workspace_guard = WorkspaceGuard::new(
             config.workspace.allowed_paths.clone(),
             config.workspace.read_only,
@@ -132,8 +131,8 @@ pub async fn build_nami_agent(
                 }
                 AgentTool::Datetime => sub_builder.tool(create_datetime_tool()),
                 AgentTool::Weather => sub_builder.tool(create_weather_tool()),
-                // เครื่องมือ media (Gemini image/TTS/video) — สร้างจาก `media.*` ใน nami.json
-                // คืน empty vec เมื่อ `media.enabled` เป็น false (warn ด้านล่าง)
+                // Media tools (Gemini image/TTS/video) — built from `media.*` in nami.json
+                // Returns empty vec when `media.enabled` is false (warned below)
                 AgentTool::Media => {
                     let media_tools = create_media_toolset(config);
                     if media_tools.is_empty() {
@@ -154,9 +153,9 @@ pub async fn build_nami_agent(
         if has_media_tools {
             sub_builder = sub_builder
                 .tool_execution_strategy(adk_rust::ToolExecutionStrategy::Parallel)
-                // runner ตั้ง tool timeout เริ่มต้นที่ 300s (DEFAULT_TOOL_TIMEOUT) แต่
-                // `media.timeout_secs` = 600s — ถ้าไม่ปรับ video tool จะถูกตัดกลาง
-                //ทางตอนรอ render (timeout ของ runner มาก่อน timeout ของ tool เอง)
+                // Default runner tool timeout is 300s (DEFAULT_TOOL_TIMEOUT), but
+                // `media.timeout_secs` = 600s — without extending this, video rendering
+                // would be timed out prematurely by the runner before the tool timeout.
                 .tool_timeout(std::time::Duration::from_secs(
                     config.media.timeout_secs + 60,
                 ));
@@ -165,13 +164,12 @@ pub async fn build_nami_agent(
         sub_agents.push(Arc::new(sub_builder.build()?) as Arc<dyn Agent>);
     }
 
-    // 6. ประกอบ LlmAgent (root) พร้อมลงทะเบียน Toolsets (DevTools, MCP Manager), Custom Tools
-    //    และ Sub-Agents ที่สร้างไว้
+    // 6. Build LlmAgent (root) and register toolsets (DevTools, MCP Manager), Custom Tools,
+    //    and created sub-agents.
     //
-    // `with_auto_skills()` โหลด skill index จาก `.skills/` (ค่าเริ่มต้นของ adk-skill)
-    // `instruction_provider` คืนข้อความดิบของ system instruction โดยไม่ผ่าน
-    // `inject_session_state` ซึ่งตีความ `{...}` ใน `instruction` เป็น state variable
-    // แล้ว error ถ้าคีย์ไม่มีใน session state
+    // `with_auto_skills()` loads skill index from `.skills/`
+    // `instruction_provider` returns raw text of system instruction without passing through
+    // `inject_session_state`, which interprets `{...}` in `instruction` as state variables.
     let mut builder = LlmAgentBuilder::new(&config.name)
         .description("Nami Assistant")
         .instruction_provider(Box::new(move |_ctx: Arc<dyn adk_rust::ReadonlyContext>| {
@@ -182,7 +180,7 @@ pub async fn build_nami_agent(
                 >
         }))
         .model(model)
-        // โหลด skill จาก `.skills/` ในไดเรกทอรีปัจจุบัน (ค่าเริ่มต้น adk-skill)
+        // Load skills from `.skills/` in current directory
         .with_auto_skills()?
         .enhanced_plugin(retry_reflect_plugin.clone())
         .toolset(Arc::new(dev_toolset))
@@ -218,14 +216,14 @@ pub async fn build_nami_agent(
     })
 }
 
-/// สร้าง `Llm` ตาม `config.provider` และ `config.model` — ใช้ร่วมกันโดย agent หลักและ summarizer ของ Context Compaction
+/// Build `Llm` based on `config.provider` and `config.model` — shared by main agent and Context Compaction summarizer
 pub fn build_model(config: &NamiConfig) -> anyhow::Result<Arc<dyn Llm>> {
     build_model_with(config, None)
 }
 
-/// สร้าง `Llm` ตาม `config.provider` — อนุญาตให้แทนที่ `config.model` ด้วย `model_override`
+/// Build `Llm` based on `config.provider` — allows overriding `config.model` with `model_override`
 ///
-/// sub-agent ที่ระบุ `model` ในคอนฟิกจะสร้างผ่านฟังก์ชันนี้
+/// Sub-agents that specify `model` in config will be constructed using this function.
 pub fn build_model_with(
     config: &NamiConfig,
     model_override: Option<&str>,
@@ -282,9 +280,9 @@ pub fn build_model_with(
     Ok(model)
 }
 
-/// สร้าง Workspace DevTools จาก `config.workspace` (อ่าน/เขียนไฟล์ + bash ตาม `read_only`)
+/// Build Workspace DevTools from `config.workspace` (file read/write + bash based on `read_only`)
 ///
-/// แยกเป็น helper เพราะถูกเรียกสองครั้ง: โดย root agent และโดย sub-agent `coder`
+/// Separated into helper because it is called twice: by root agent and by sub-agent `coder`
 fn build_dev_toolset(config: &NamiConfig) -> DevToolset {
     let workspace_root = config
         .workspace
@@ -302,11 +300,10 @@ fn build_dev_toolset(config: &NamiConfig) -> DevToolset {
     DevToolset::new(ws)
 }
 
-/// คำแนะนำที่ต่อท้าย system instruction ของ root เพื่อบอกว่ามี sub-agent ตัวไหนบ้าง
+/// Delegation guidance appended to root system instruction listing available sub-agents
 ///
-/// สร้างจากคีย์ `agents` ใน nami.json — ชื่อและคำอธิบายใน guidance จึงตรงกับที่
-/// `.sub_agent()` ลงทะเบียนเสมอ ไม่เช่นนั้นโมเดลจะไม่รู้ว่าส่ง `transfer_to_agent` ไปหาใครได้บ้าง
-/// คืน `None` เมื่อไม่มี sub-agent (จะไม่ต่อท้ายอะไร และไม่ฉีด `transfer_to_agent`)
+/// Generated from `agents` key in nami.json — names and descriptions match those registered with
+/// `.sub_agent()`. Returns `None` when no sub-agent is enabled.
 fn root_delegation_guidance(config: &NamiConfig) -> Option<String> {
     let mut agents = config.enabled_agents();
     let first = agents.next()?;
@@ -333,17 +330,17 @@ fn root_delegation_guidance(config: &NamiConfig) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// system instruction ที่มีตัวอย่างโค้ด `{id}` (แบบเดียวกับที่ skill body ใส่มา)
-    /// ต้องไม่ทำให้ run ล้มเหลว: `instruction` template ตีความ `{id}` เป็น session
-    /// state variable แล้ว error "State variable 'id' not found" — ต้องใช้
-    /// `instruction_provider` ซึ่งคืนข้อความดิบไม่ผ่าน template injection
+    /// System instruction with example code `{id}` (like in a skill body)
+    /// must not cause run failure. The default template interprets `{id}` as a session
+    /// state variable and errors "State variable 'id' not found" — so `instruction_provider`
+    /// must be used to return raw text without template injection.
     #[tokio::test]
     async fn test_instruction_with_braces_via_provider() {
         use adk_session::SessionService;
 
         let config = NamiConfig::load_default().unwrap();
 
-        // จำลอง instruction ที่มี placeholder-like text แบบเดียวกับ skill body
+        // Simulate instruction with placeholder-like text similar to skill body
         let system_instruction = format!(
             "{}\n\n[Skill: example]\nExample endpoint: POST /runs/{{id}}/wake",
             config.system_instruction
@@ -363,7 +360,7 @@ mod tests {
                         Box<dyn std::future::Future<Output = adk_rust::Result<String>> + Send>,
                     >
             }))
-            // ตัด model call ออกเพื่อให้เท스트ไม่ต้องพึ่ง API key
+            // Bypass model call so tests do not rely on an external API key
             .before_model_callback(Box::new(|_ctx, _req| {
                 Box::pin(async move {
                     Ok(adk_rust::BeforeModelResult::Skip(
@@ -425,7 +422,7 @@ mod tests {
         assert!(got_model_text, "expected the mocked model reply to arrive");
     }
 
-    /// guidance ต้อง list ชื่อ + คำอธิบายของทุก sub-agent ที่ enabled และตัด disabled ทิ้ง
+    /// Guidance must list name + description of all enabled sub-agents and exclude disabled ones
     #[test]
     fn test_root_delegation_guidance_lists_enabled_agents() {
         let json = r#"{
@@ -452,7 +449,7 @@ mod tests {
         );
     }
 
-    /// ไม่มี sub-agent (หรือทุกตัว disabled) ต้องคืน `None` — root ไม่ต่อ guidance และไม่ฉีด transfer
+    /// No sub-agent (or all disabled) must return `None` — root does not append guidance or inject transfer
     #[test]
     fn test_root_delegation_guidance_none_when_no_agents() {
         let json = r#"{
@@ -465,8 +462,7 @@ mod tests {
         assert!(root_delegation_guidance(&config).is_none());
     }
 
-    /// model ที่ reject sampling parameters ต้องไม่ได้ temperature — ไม่งั้นทุก request fail
-    /// ด้วย `model.gemini.sampling_unsupported` (รวมกรณีที่มี prefix `models/`)
+    /// Models that reject sampling parameters must not receive temperature
     #[test]
     fn test_effective_temperature_skips_rejecting_models() {
         let json = r#"{
@@ -488,7 +484,7 @@ mod tests {
         );
     }
 
-    /// ไม่ระบุ `temperature` ใน nami.json → `None` (โมเดลใช้ค่า default ของ provider)
+    /// Unspecified `temperature` in nami.json → `None` (model uses provider default)
     #[test]
     fn test_effective_temperature_absent_is_none() {
         let json = r#"{
@@ -505,14 +501,14 @@ mod tests {
         );
     }
 
-    /// Phase 6: tool progress ต้องวิ่งจาก `ToolContext::emit_progress` ผ่าน runner
-    /// stream จนถึง client — model ถูก mock (ไม่ใช้ API) โดย turn แรกคืน
-    /// FunctionCall และ turn ที่สองคืนข้อความจบ
+    /// Tool progress must stream from `ToolContext::emit_progress` through the runner
+    /// stream to the client. Model is mocked (no API calls); first turn returns FunctionCall,
+    /// second turn returns final message.
     #[tokio::test]
     async fn test_tool_progress_flows_through_runner_stream() {
         use adk_session::SessionService;
 
-        // tool จำลองที่ emit progress สองครั้งระหว่างรัน
+        // Mock tool that emits progress twice during execution
         let progress_tool = FunctionTool::new(
             "slow_tool",
             "test tool that emits progress while running",
@@ -525,7 +521,7 @@ mod tests {
             },
         );
 
-        // model mock: เรียกแรก = FunctionCall("slow_tool"), ครั้งต่อ ๆ ไป = "done"
+        // Mock model: first call = FunctionCall("slow_tool"), subsequent calls = "done"
         let model_call = adk_rust::Content {
             role: "model".to_string(),
             parts: vec![adk_rust::Part::FunctionCall {
