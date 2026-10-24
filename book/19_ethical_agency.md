@@ -31,7 +31,7 @@ By instructing specialists to make minimal changes, the blast radius of any indi
 
 Ethical agency requires total transparency. An agent whose reasoning is hidden behind opaque background queues or unlogged threads cannot be trusted.
 
-In Nami Mini, every turn leaves a complete, queryable audit trail:
+In my architecture, every turn leaves a complete, queryable audit trail:
 
 - **Streaming Telemetry:** Every tool call (`🔧 call`), tool result (`✅` / `❌`), thinking phase (`🤔 thinking`), and final metrics (`💭 thought`) are rendered live to stdout over SSE (`src/cli.rs`).
 - **Persistent Session State:** All conversation turns, tool calls, and model outputs are recorded in SQLite (`nami.db`) via `adk-session` (Chapter 13).

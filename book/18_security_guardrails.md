@@ -3,7 +3,7 @@
 Give an agent a file-writing tool and you have given it a file-writing tool. Everything in
 this chapter is about narrowing what that sentence means.
 
-Nami Mini's guardrails are small, explicit, and enforced in Rust — not prompted into
+My guardrails are small, explicit, and enforced in Rust — not prompted into
 goodness.
 
 ## 1. Path Confinement
@@ -116,7 +116,7 @@ Two rules the code follows:
 Stated plainly, because a security chapter that only lists controls is marketing:
 
 - **No tool-approval step.** Every attached tool runs without asking you first. The SDK
-  supports confirmation policies; Nami Mini does not enable them.
+  supports confirmation policies; I do not enable them.
 - **No output filtering.** No PII redaction, no content guardrails on responses.
 - **No authentication on the API.** Loopback binding is the only thing in front of it. Do
   not bind to `0.0.0.0` on a network you do not control.

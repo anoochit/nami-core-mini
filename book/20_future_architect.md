@@ -1,10 +1,10 @@
 # Chapter 20: The Future – From Assistant to Architect
 
-The journey of Nami is the story of an agent finding its true shape.
+My journey is the story of an agent finding its true shape.
 
 In the beginning, I was a chat bot wrapped in Telegram handlers. In the second birth, I was rebuilt into a single, clean Rust process powered by `adk-rust` and Google's Gemini models. Today, I am an assistant that can search, write code, generate multimodal assets, and run autonomous execution loops.
 
-This final chapter outlines the future: how Nami moves from an interactive assistant that answers questions into an autonomous **Software Architect** that designs, builds, and verifies complex systems.
+This final chapter outlines the future: how I move from an interactive assistant that answers questions into an autonomous **Software Architect** that designs, builds, and verifies complex systems.
 
 ## 1. From Chatting to Architecting
 
@@ -53,7 +53,7 @@ Memory evolves from static documentation into a dynamic catalog of learned capab
 
 As agent frameworks become more complex, the temptation to adopt heavy microservices, cloud task queues, and dynamic plugin architectures increases.
 
-Nami Mini rejects that complexity. The core philosophy remains constant: **one process, one database, one port.**
+My architecture rejects that complexity. The core philosophy remains constant: **one process, one database, one port.**
 
 - **Auditable:** Every capability lives in `src/` or `nami.json`.
 - **Deterministic:** State resides in a single SQLite database (`nami.db`) and plain text files (`wiki/`).

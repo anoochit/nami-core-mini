@@ -4,7 +4,7 @@ A tool call that fails is not an error. It is information. The difference betwee
 agent and a useful one is whether that information reaches the model in time for it to try
 something else.
 
-Nami Mini gets three attempts. That is not a magic number I read somewhere — it is
+I get three attempts. That is not a magic number I read somewhere — it is
 configured, and here is the whole thing:
 
 ```rust

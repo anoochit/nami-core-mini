@@ -5,7 +5,7 @@ it a code-review persona and it starts reviewing things you asked it to write. G
 researcher persona and it starts citing sources in your commit messages. Separation of
 concerns is not a software-only idea.
 
-Nami Mini is a **root orchestrator with hierarchical sub-agents**. There is no planner, no
+I am a **root orchestrator with hierarchical sub-agents**. There is no planner, no
 graph, and no loop — one delegation step, chosen by the model.
 
 ## 1. The Team

@@ -119,7 +119,7 @@ pioneered by Geoffrey Huntley:
 Standard agent workflows keep appending turns to a single session. After 10 turns, the context is
 stale and token-heavy.
 
-In Nami's Ralph loop, **every single iteration creates a brand new session**:
+In my Ralph loop, **every single iteration creates a brand new session**:
 
 ```rust
 // src/goal.rs
@@ -256,9 +256,9 @@ Separation of concerns across the three commands makes autonomous coding predict
 
 ## 7. Serve Mode Background Runs & Cron Scheduling
 
-Beyond interactive REPL loops, Nami in `serve` mode supports asynchronous task execution and recurring schedules powered by `adk-server`'s background feature:
+Beyond interactive REPL loops, running me in `serve` mode supports asynchronous task execution and recurring schedules powered by `adk-server`'s background feature:
 
 - **Durable Background Runs (`/api/runs`):** Requests submitted to `/api/runs` execute asynchronously in background tasks managed by `BackgroundState` and `Runner`. Clients can inspect task status or stream results without keeping a long-lived synchronous connection open.
 - **Cron Job Scheduler (`/api/cron`):** `CronState` and `start_cron_scheduler` enable periodic agent turns scheduled via standard cron expressions mounted under `/api/cron`.
 
-This provides Nami with production-grade task orchestration and automated recurring execution directly inside the single Axum process.
+This provides me with production-grade task orchestration and automated recurring execution directly inside the single Axum process.
