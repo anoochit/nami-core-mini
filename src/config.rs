@@ -68,17 +68,102 @@ impl Default for ServerOptionsConfig {
 pub struct CliOptionsConfig {
     #[serde(default = "default_cli_user_id")]
     pub user_id: String,
+    #[serde(default = "default_display_true", alias = "thinking", alias = "show_thinking")]
+    pub show_thinking: bool,
+    #[serde(default = "default_display_true", alias = "tool_call", alias = "tool_calls", alias = "show_tool_calls", alias = "show_tool_call")]
+    pub show_tool_call: bool,
+    #[serde(default = "default_display_true", alias = "tool_result", alias = "tool_results", alias = "show_tool_results", alias = "show_tool_result")]
+    pub show_tool_result: bool,
+    #[serde(default = "default_display_true", alias = "answer", alias = "show_answer", alias = "show_answer_label", alias = "answer_label")]
+    pub show_answer: bool,
+    #[serde(default)]
+    pub display: Option<DisplayOptions>,
 }
 
 fn default_cli_user_id() -> String {
     "user".to_string()
 }
 
+fn default_display_true() -> bool {
+    true
+}
+
 impl Default for CliOptionsConfig {
     fn default() -> Self {
         Self {
             user_id: default_cli_user_id(),
+            show_thinking: true,
+            show_tool_call: true,
+            show_tool_result: true,
+            show_answer: true,
+            display: None,
         }
+    }
+}
+
+impl CliOptionsConfig {
+    pub fn display_options(&self) -> DisplayOptions {
+        if let Some(d) = self.display {
+            d
+        } else {
+            DisplayOptions {
+                show_thinking: self.show_thinking,
+                show_tool_call: self.show_tool_call,
+                show_tool_result: self.show_tool_result,
+                show_answer: self.show_answer,
+            }
+        }
+    }
+}
+
+/// การตั้งค่าแสดงผลใน CLI / REPL (thinking, tool call, tool result, answer label)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisplayOptions {
+    /// แสดงกระบวนการคิดของโมเดล (`🤔 thinking`)
+    #[serde(default = "default_display_true", alias = "thinking", alias = "show_thinking")]
+    pub show_thinking: bool,
+    /// แสดงการเรียกใช้เครื่องมือ (`🔧 name(args)`)
+    #[serde(default = "default_display_true", alias = "tool_call", alias = "tool_calls", alias = "show_tool_calls", alias = "show_tool_call")]
+    pub show_tool_call: bool,
+    /// แสดงผลลัพธ์ของเครื่องมือ (`✅ name` / `❌ name`)
+    #[serde(default = "default_display_true", alias = "tool_result", alias = "tool_results", alias = "show_tool_results", alias = "show_tool_result")]
+    pub show_tool_result: bool,
+    /// แสดงหัวข้อคำตอบ (`💬 answer`)
+    #[serde(default = "default_display_true", alias = "answer", alias = "show_answer", alias = "show_answer_label", alias = "answer_label")]
+    pub show_answer: bool,
+}
+
+impl Default for DisplayOptions {
+    fn default() -> Self {
+        Self {
+            show_thinking: true,
+            show_tool_call: true,
+            show_tool_result: true,
+            show_answer: true,
+        }
+    }
+}
+
+impl DisplayOptions {
+    /// ปิดการแสดงผลทั้งหมด (แสดงเฉพาะเนื้อหาคำตอบ)
+    pub fn all_disabled() -> Self {
+        Self {
+            show_thinking: false,
+            show_tool_call: false,
+            show_tool_result: false,
+            show_answer: false,
+        }
+    }
+
+    /// เปิดการแสดงผลทั้งหมด
+    pub fn all_enabled() -> Self {
+        Self::default()
+    }
+
+    /// ตรวจสอบว่ามีการเปิดแสดงผลส่วนย่อยอย่างน้อยหนึ่งอย่างหรือไม่
+    #[allow(dead_code)]
+    pub fn has_any_enabled(&self) -> bool {
+        self.show_thinking || self.show_tool_call || self.show_tool_result || self.show_answer
     }
 }
 
@@ -372,7 +457,95 @@ impl NamiConfig {
 mod tests {
     use super::*;
 
-    /// stdio (`command`) และ remote (`url`) อยู่ร่วมกันในคีย์ `mcpServers` เดียว
+    #[test]
+    fn test_cli_options_defaults() {
+        let json = r#"{
+            "name": "n", "version": "1", "provider": "p", "model": "m",
+            "system_instruction": "s",
+            "workspace": { "allowed_paths": ["./"], "read_only": false },
+            "storage": { "db_path": "./n.db", "wiki_dir": "./wiki" }
+        }"#;
+
+        let config: NamiConfig = serde_json::from_str(json).unwrap();
+        let display = config.cli.display_options();
+        assert!(display.show_thinking);
+        assert!(display.show_tool_call);
+        assert!(display.show_tool_result);
+        assert!(display.show_answer);
+        assert!(display.has_any_enabled());
+    }
+
+    #[test]
+    fn test_cli_options_deserialization_full() {
+        let json = r#"{
+            "name": "n", "version": "1", "provider": "p", "model": "m",
+            "system_instruction": "s",
+            "workspace": { "allowed_paths": ["./"], "read_only": false },
+            "storage": { "db_path": "./n.db", "wiki_dir": "./wiki" },
+            "cli": {
+                "user_id": "alice",
+                "show_thinking": false,
+                "show_tool_call": true,
+                "show_tool_result": false,
+                "show_answer": false
+            }
+        }"#;
+
+        let config: NamiConfig = serde_json::from_str(json).unwrap();
+        let display = config.cli.display_options();
+        assert!(!display.show_thinking);
+        assert!(display.show_tool_call);
+        assert!(!display.show_tool_result);
+        assert!(!display.show_answer);
+        assert!(display.has_any_enabled());
+    }
+
+    #[test]
+    fn test_cli_options_aliases() {
+        let json = r#"{
+            "name": "n", "version": "1", "provider": "p", "model": "m",
+            "system_instruction": "s",
+            "workspace": { "allowed_paths": ["./"], "read_only": false },
+            "storage": { "db_path": "./n.db", "wiki_dir": "./wiki" },
+            "cli": {
+                "thinking": false,
+                "tool_calls": false,
+                "tool_results": false,
+                "answer_label": false
+            }
+        }"#;
+
+        let config: NamiConfig = serde_json::from_str(json).unwrap();
+        let display = config.cli.display_options();
+        assert!(!display.show_thinking);
+        assert!(!display.show_tool_call);
+        assert!(!display.show_tool_result);
+        assert!(!display.show_answer);
+        assert!(!display.has_any_enabled());
+    }
+
+    #[test]
+    fn test_cli_options_nested_display() {
+        let json = r#"{
+            "name": "n", "version": "1", "provider": "p", "model": "m",
+            "system_instruction": "s",
+            "workspace": { "allowed_paths": ["./"], "read_only": false },
+            "storage": { "db_path": "./n.db", "wiki_dir": "./wiki" },
+            "cli": {
+                "display": {
+                    "show_thinking": true,
+                    "show_tool_call": false,
+                    "show_tool_result": true
+                }
+            }
+        }"#;
+
+        let config: NamiConfig = serde_json::from_str(json).unwrap();
+        let display = config.cli.display_options();
+        assert!(display.show_thinking);
+        assert!(!display.show_tool_call);
+        assert!(display.show_tool_result);
+    }
     /// แล้วแยกกันตาม field ที่มี — รูปแบบ mcp.json
     #[test]
     fn test_mcp_servers_split_stdio_and_remote() {

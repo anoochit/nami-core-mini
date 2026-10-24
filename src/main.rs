@@ -221,7 +221,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 Command::Ask(text) => {
                     let response = client.run_stream(&text).await?;
-                    let _ = cli::render_stream_response(response, false).await;
+                    let _ = cli::render_stream_response(response, config.cli.display_options()).await;
                     println!();
                 }
                 _ => unreachable!(),

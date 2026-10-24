@@ -235,7 +235,11 @@ pub async fn start_grill(
 
     let prompt = build_grill_start_prompt(topic);
     let response = client.run_stream(&prompt).await?;
-    let (stats, _) = crate::cli::render_stream_response(response, true).await;
+    let (stats, _) = crate::cli::render_stream_response(
+        response,
+        crate::config::DisplayOptions::all_enabled(),
+    )
+    .await;
 
     if let Some(line) = crate::cli::stats_line(&stats) {
         println!("\n{line}");
@@ -271,7 +275,11 @@ pub async fn finish_grill(
 
     let prompt = build_grill_summary_prompt(&session.topic);
     let response = client.run_stream(&prompt).await?;
-    let (stats, answer) = crate::cli::render_stream_response(response, true).await;
+    let (stats, answer) = crate::cli::render_stream_response(
+        response,
+        crate::config::DisplayOptions::all_enabled(),
+    )
+    .await;
 
     if let Some(line) = crate::cli::stats_line(&stats) {
         println!("\n{line}");

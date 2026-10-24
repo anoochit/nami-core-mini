@@ -205,7 +205,11 @@ async fn run_plan_inner(client: &mut NamiApiClient, spec: PlanSpec) -> anyhow::R
 
     let prompt = build_plan_prompt(&spec.task, grill_context.as_deref());
     let response = client.run_stream(&prompt).await?;
-    let (stats, answer) = crate::cli::render_stream_response(response, true).await;
+    let (stats, answer) = crate::cli::render_stream_response(
+        response,
+        crate::config::DisplayOptions::all_enabled(),
+    )
+    .await;
 
     if let Some(line) = crate::cli::stats_line(&stats) {
         println!("\n{line}");

@@ -516,7 +516,11 @@ async fn run_ralph_loop_inner(client: &mut NamiApiClient, spec: GoalSpec) -> any
 
         // 3. Stream agent execution
         let response = client.run_stream(&prompt).await?;
-        let (stats, answer) = crate::cli::render_stream_response(response, true).await;
+        let (stats, answer) = crate::cli::render_stream_response(
+            response,
+            crate::config::DisplayOptions::all_enabled(),
+        )
+        .await;
         if let Some(line) = crate::cli::stats_line(&stats) {
             println!("\n{line}");
         }
@@ -563,7 +567,11 @@ async fn run_ralph_loop_inner(client: &mut NamiApiClient, spec: GoalSpec) -> any
                 client.new_session().await?;
                 let eval_prompt = build_evaluator_prompt(&spec.goal, criteria);
                 let eval_resp = client.run_stream(&eval_prompt).await?;
-                let (_, eval_answer) = crate::cli::render_stream_response(eval_resp, false).await;
+                let (_, eval_answer) = crate::cli::render_stream_response(
+                    eval_resp,
+                    crate::config::DisplayOptions::all_disabled(),
+                )
+                .await;
                 let (passed, explanation) = extract_verification(&eval_answer);
 
                 if passed {

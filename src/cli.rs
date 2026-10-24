@@ -272,14 +272,15 @@ fn fmt_bytes(bytes: u64) -> String {
     }
 }
 
+use crate::config::DisplayOptions;
+
 /// Render streamed SSE events from an HTTP response to stdout.
-/// When `verbose` is false, only the final answer text is printed
-/// (thinking and tool-call messages are skipped).
+/// Configured via [`DisplayOptions`] to show/hide thinking, tool calls, and tool results.
 ///
 /// คืนค่า [`TurnStats`] ของเทิร์น (เวลาคิด + จำนวน token) ให้ caller แสดงผลต่อ
 pub async fn render_stream_response(
     response: reqwest::Response,
-    verbose: bool,
+    display: DisplayOptions,
 ) -> (TurnStats, String) {
     let mut bytes_stream = response.bytes_stream();
     let mut parser = SseParser::new();
@@ -318,7 +319,9 @@ pub async fn render_stream_response(
             // progress chunk ของ tool ที่กำลังรัน (เช่น video render) — แสดงเป็น
             // บรรทัดสดใน tool section และไม่แตะ stats (no usage / no output timing)
             if evt.tool_progress_stream().is_some() {
-                if verbose && let Some(content) = evt.content() {
+                if (display.show_tool_call || display.show_tool_result)
+                    && let Some(content) = evt.content()
+                {
                     for part in &content.parts {
                         if let Part::Text { text } = part
                             && !text.is_empty()
@@ -341,7 +344,7 @@ pub async fn render_stream_response(
                         Part::Text { text } if !text.is_empty() => {
                             accumulated_answer.push_str(text);
                             tracker.on_output(now);
-                            if verbose && section != Section::Answer {
+                            if display.show_answer && section != Section::Answer {
                                 print_section_header("💬 answer", &mut first_output);
                                 section = Section::Answer;
                             }
@@ -350,7 +353,7 @@ pub async fn render_stream_response(
                         }
                         Part::Thinking { thinking, .. } if !thinking.is_empty() => {
                             tracker.on_thinking(now);
-                            if verbose {
+                            if display.show_thinking {
                                 if section != Section::Thinking {
                                     print_section_header("🤔 thinking", &mut first_output);
                                     section = Section::Thinking;
@@ -366,7 +369,7 @@ pub async fn render_stream_response(
                                 continue;
                             }
                             tracker.on_output(now);
-                            if verbose {
+                            if display.show_tool_call {
                                 if section != Section::Tool {
                                     print_section_header("🛠️ tool", &mut first_output);
                                     section = Section::Tool;
@@ -383,7 +386,7 @@ pub async fn render_stream_response(
                                 continue;
                             }
                             tracker.on_output(now);
-                            if verbose {
+                            if display.show_tool_result {
                                 if section != Section::Tool {
                                     print_section_header("🛠️ tool", &mut first_output);
                                     section = Section::Tool;
@@ -653,7 +656,7 @@ pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiCo
             }
         };
 
-        let (stats, _) = render_stream_response(response, true).await;
+        let (stats, _) = render_stream_response(response, config.cli.display_options()).await;
         if let Some(line) = stats_line(&stats) {
             print!("\n\n{line}");
             io::stdout().flush().ok();
