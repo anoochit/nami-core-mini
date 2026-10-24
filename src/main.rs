@@ -13,7 +13,6 @@ mod server;
 mod tools;
 mod workspace;
 
-use adk_rust::server::create_app;
 use agent::build_nami_agent;
 use api_client::NamiApiClient;
 use config::NamiConfig;
@@ -185,14 +184,14 @@ async fn main() -> anyhow::Result<()> {
 
     match cli_args.command {
         Command::Serve => {
-            let server_config =
-                server::build_server_config(agent, memory.session_service.clone(), &config)?;
-            let app = create_app(server_config);
+            let app =
+                server::build_app(agent, memory.session_service.clone(), &config)?;
             let addr = format!("{}:{}", effective_host, effective_port);
             tracing::info!("🚀 Starting Nami Axum HTTP server on http://{}", addr);
 
             let listener = tokio::net::TcpListener::bind(&addr).await?;
             tracing::info!("✅ Nami API & Web UI ready at http://{}/ui/", addr);
+            tracing::info!("🔄 Durable background runs (/api/runs) & Cron (/api/cron) enabled");
             axum::serve(listener, app).await?;
             if let Some(mcp) = mcp_manager {
                 let _ = mcp.shutdown().await;
@@ -205,9 +204,8 @@ async fn main() -> anyhow::Result<()> {
                     NamiApiClient::connect(url_base, &config.name, &config.cli.user_id).await?;
                 (client, None)
             } else {
-                let server_config =
-                    server::build_server_config(agent, memory.session_service.clone(), &config)?;
-                let app = create_app(server_config);
+                let app =
+                    server::build_app(agent, memory.session_service.clone(), &config)?;
                 let server = NamiServer::start(app, effective_host, effective_port).await?;
                 let client =
                     NamiApiClient::connect(&server.base_url, &config.name, &config.cli.user_id)

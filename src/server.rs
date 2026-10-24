@@ -1,6 +1,11 @@
 use adk_rust::Agent;
-use adk_rust::server::ServerConfig;
+use adk_runner::Runner;
+use adk_rust::server::background::{
+    BackgroundState, CronState, start_cron_scheduler,
+};
+use adk_rust::server::{ServerBuilder, ServerConfig};
 use adk_session::SqliteSessionService;
+use axum::Router;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -30,6 +35,41 @@ pub fn build_server_config(
         server_config = server_config.with_compaction(compaction);
     }
     Ok(server_config)
+}
+
+pub fn build_app(
+    agent: Arc<dyn Agent>,
+    session_service: Arc<SqliteSessionService>,
+    config: &NamiConfig,
+) -> anyhow::Result<Router> {
+    let server_config = build_server_config(agent.clone(), session_service.clone(), config)?;
+
+    let runner = Arc::new(
+        Runner::builder()
+            .app_name("nami")
+            .agent(agent.clone())
+            .session_service(session_service)
+            .build()?,
+    );
+
+    let agent_name = agent.name();
+    let mut background = BackgroundState::new()
+        .with_agent(agent_name, runner.clone());
+
+    if agent_name != "nami" {
+        background = background.with_agent("nami", runner.clone());
+    }
+
+    let cron = CronState::new(background.clone());
+    start_cron_scheduler(cron.clone());
+
+    let app = ServerBuilder::new(server_config)
+        .with_background_runs(background)
+        .with_cron_jobs(cron)
+        .enable_shutdown_endpoint()
+        .build();
+
+    Ok(app)
 }
 
 impl NamiServer {

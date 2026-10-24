@@ -4,19 +4,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-adk-rust = { version = "2.3.0", features = ["full", "sqlite-memory", "ollama", "mcp-http", "openrouter"] }
-adk-session = { version = "2.3.0", features = ["sqlite"] }
-adk-memory = { version = "2.3.0", features = ["sqlite-memory"] }
-adk-server = "2.3.0"
-adk-devtools = "2.3.0"
-adk-retry-reflect = "2.3.0"
+adk-rust = { path = "adk-rust/adk-rust", features = ["full", "sqlite-memory", "ollama", "mcp-http", "openrouter"] }
+adk-session = { path = "adk-rust/adk-session", features = ["sqlite"] }
+adk-memory = { path = "adk-rust/adk-memory", features = ["sqlite-memory"] }
+adk-server = { path = "adk-rust/adk-server", features = ["background"] }
+adk-runner = { path = "adk-rust/adk-runner" }
+adk-devtools = { path = "adk-rust/adk-devtools" }
+adk-retry-reflect = { path = "adk-rust/adk-retry-reflect" }
 # wire client สำหรับเครื่องมือ media (image/TTS) — umbrella ไม่ re-export
 # `GeminiClient`/`ContentBuilder` ออกมา จึงต้องพึ่ง crate ตรง (เวอร์ชันเดียวกับกราฟอยู่แล้ว)
 # feature `interactions` เปิดสำหรับ video (gemini-omni รับเฉพาะ Interactions API)
-adk-gemini = { version = "2.3.0", features = ["interactions"] }
+adk-gemini = { path = "adk-rust/adk-gemini", features = ["interactions"] }
 # `enhanced-plugins` ปิดอยู่ใน adk-rust 2.3.0 (feature `plugin` ไม่ได้ forward มาที่ adk-agent)
 # จึงต้องเปิดโดยตรงผ่าน dependency นี้ — feature unification จะ apply กับ adk-agent เดียวในกราฟ
-adk-agent = { version = "2.3.0", features = ["enhanced-plugins"] }
+adk-agent = { path = "adk-rust/adk-agent", features = ["enhanced-plugins"] }
 tokio = { version = "1.42", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -33,3 +34,4 @@ axum = "0.8"
 chrono = "0.4"
 uuid = { version = "1.0", features = ["v4"] }
 dotenvy = "0.15"
+
