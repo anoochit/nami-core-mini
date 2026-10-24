@@ -17,7 +17,8 @@
   },
   "commands": {
     "review": "Inspect the workspace files, run code quality checks, and review for bugs or potential vulnerabilities.",
-    "summarize": "Summarize key project decisions, architectural state, and recent changes."
+    "summarize": "Summarize key project decisions, architectural state, and recent changes.",
+    "wiki": "Search and retrieve relevant information from the wiki/ directory to answer the query: {args}"
   },
   "storage": {
     "db_path": "./nami.db",
