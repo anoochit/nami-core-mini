@@ -67,7 +67,7 @@ Skill discovery is not configuration — it is code with a comment next to it:
 
 ```rust
 // src/agent.rs
-// `with_auto_skills()` โหลด skill index จาก `.skills/` (ค่าเริ่มต้นของ adk-skill)
+// `with_auto_skills()` loads the skill index from `.skills/` (default for adk-skill)
 ```
 
 The wiring decision sits on the line it explains. `instruction_provider` returns the
@@ -94,7 +94,7 @@ Then one function writes root's whole delegation policy:
  specialist, transfer to it and then summarize its result for the user."
 ```
 
-Its doc comment states the invariant in Thai: the names and descriptions in the guidance
+Its doc comment states the invariant: the names and descriptions in the guidance
 come from the same `agents` table that feeds `.sub_agent()`, so the roster root recites
 can never drift from the roster that exists. One source of truth, generated prose.
 
@@ -124,22 +124,20 @@ behaviour it pins.
   comment tells you to run it with `cargo test -- --ignored`. You opt into spending
   money with a flag, and the flag tells you what it buys.
 
-## 6. Comments in Two Languages
+## 6. Clear Documentation & Logging
 
-The comments are half Thai, half English, on purpose. `src/memory.rs` opens with:
+Comments explain why code is shaped the way it is:
 
 ```rust
-/// เปิดฐานข้อมูล SQLite ไฟล์เดียวตาม `storage.db_path` สำหรับทั้ง Session และ Memory
+/// Open single SQLite database file at `storage.db_path` for both Session and Memory
 ```
 
-Then the log line `src/main.rs` emits when the server comes up is English:
+Then the log line `src/main.rs` emits when the server comes up is clear English:
 `tracing::info!("🚀 Starting Nami Axum HTTP server on http://{}", addr)`. The pattern
-holds across the tree: Thai carries the reasoning and the constraints — "never hardcode
-model ids in code", "runner sets a 300s default tool timeout" — while English carries
-what the machine says and what the operator reads. Errors users can hit are always
-English ("Port may already be in use. Try passing `--port <port>` or `--url
-<base_url>`."), because the person reading them may not read Thai. The book is in English
-for the same reason: write for the audience actually in front of you.
+holds across the tree: inline comments carry architectural reasoning and constraints — "never hardcode
+model ids in code", "runner sets a 300s default tool timeout" — while log outputs, wire formats,
+and user-facing error messages ("Port may already be in use. Try passing `--port <port>` or `--url
+<base_url>`.") stay concise and actionable.
 
 ## 7. The Framework's Fault Lines, Written Down
 
@@ -147,9 +145,9 @@ Whenever this codebase looks strangely shaped, a comment explains whose fault it
 
 ```rust
 // src/agent.rs
-// runner ตั้ง tool timeout เริ่มต้นที่ 300s (DEFAULT_TOOL_TIMEOUT) แต่
-// `media.timeout_secs` = 600s — ถ้าไม่ปรับ video tool จะถูกตัดกลาง
-//ทางตอนรอ render (timeout ของ runner มาก่อน timeout ของ tool เอง)
+// runner sets default tool timeout at 300s (DEFAULT_TOOL_TIMEOUT), but
+// `media.timeout_secs` = 600s — if not adjusted, the video tool will be cut off midway
+// while waiting for render (runner timeout occurs before tool timeout itself)
 ```
 
 The fix is one line —
@@ -157,7 +155,7 @@ The fix is one line —
 is the part that survives. Same story in `config.rs`, where the compaction section's doc
 comment admits the SDK's limit: token-budget triggering would need a Runner built
 directly, which the 2.3.0 launcher does not expose, so post-run counting is what the
-wrapper actually allows. And `Cargo.toml` carries a three-line Thai note explaining why
+wrapper actually allows. And `Cargo.toml` carries a three-line note explaining why
 `adk-gemini` is a direct dependency at all (the umbrella crate does not re-export the
 client types).
 
@@ -179,9 +177,7 @@ Honesty, again:
 - **Clippy clean.** Running `cargo clippy` passes with zero warnings across the entire codebase.
 - **The mocks prove my side, not theirs.** The five live tests are the only proof the
   media pipeline matches Google's real API — and they are off by default and cost money.
-- **Bilingual comments have a cost too.** An English-only reader gets the what and loses
-  the why. Every choice in this chapter trades something; this one trades reach for the
-  local team's reasoning.
+- **Explicit code comments.** Comments maintain clear architectural reasoning directly beside the code they document.
 
 None of this is enforced. That is the point: in an AI-native repo, the greps *are* the
 policy, the colocated tests *are* the gate, and the comments *are* the design record —
