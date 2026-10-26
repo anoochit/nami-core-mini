@@ -507,6 +507,8 @@ pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiCo
             println!("URL:        {}", client.base_url());
             println!("App Name:   {}", client.app_name());
             println!("Session ID: {}\n", client.session_id());
+            println!("Provider:   {}", config.provider);
+            println!("Model:      {}", config.model);
             continue;
         }
 
