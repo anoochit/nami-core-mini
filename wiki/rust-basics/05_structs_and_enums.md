@@ -50,6 +50,7 @@ enum Message {
 ### Standard Library Enums
 
 - **`Option<T>`:** Represents optional values (replaces null pointers):
+
   ```rust
   enum Option<T> {
       Some(T),
@@ -58,6 +59,7 @@ enum Message {
   ```
 
 - **`Result<T, E>`:** Handles recoverable errors:
+
   ```rust
   enum Result<T, E> {
       Ok(T),

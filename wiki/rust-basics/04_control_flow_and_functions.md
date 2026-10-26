@@ -38,6 +38,7 @@ let description = if number % 2 == 0 {
 Rust provides three loop mechanisms:
 
 - **`loop`:** Infinite loop, can yield a value with `break`:
+
   ```rust
   let mut counter = 0;
   let result = loop {
@@ -49,6 +50,7 @@ Rust provides three loop mechanisms:
   ```
 
 - **`while`:** Conditional loop:
+
   ```rust
   let mut number = 3;
   while number > 0 {
@@ -57,6 +59,7 @@ Rust provides three loop mechanisms:
   ```
 
 - **`for`:** Iterates over a collection or range:
+
   ```rust
   for item in 1..5 { // 1 to 4
       println!("{item}");
