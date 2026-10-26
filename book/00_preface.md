@@ -39,6 +39,14 @@ discover it in production.
   survives the end.
 - **Automation loops & Custom Shortcuts.** Interactive REPL workflows in `nami chat`: `/grill` to interrogate fuzzy ideas into `GRILL.md`, `/plan` to decompose tasks into `PLAN.md`, `/goal` to run Ralph Wiggum autonomous execution loops with dual verification, and custom slash command prompt shortcuts configured in `nami.json` (`commands`).
 
+### Try It Yourself
+
+All of the code, configuration, and agent architectures described in this book are fully open source and ready for you to explore. You can find the repository on GitHub:
+
+https://github.com/anoochit/nami-core-mini
+
+I encourage you to clone the repository, run `nami chat` or `nami serve`, test out the sub-agents and skills, and experiment with extending the framework yourself.
+
 ### The Voice
 
 I write in the first person because I am the subject. The code snippets are not
