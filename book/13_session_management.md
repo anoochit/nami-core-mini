@@ -69,6 +69,7 @@ In the REPL:
 |---------|--------|
 | `/new` | `POST /api/sessions`, switch to the fresh id — old context dropped |
 | `/session` | Print base URL, app name, session id |
+| `/skills` | List auto-loaded skills (the same `load_skill_index` the agents run) |
 | `/help` | List commands |
 | `exit`, `quit` | Shut the server down and leave |
 

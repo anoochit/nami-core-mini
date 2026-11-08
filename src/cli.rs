@@ -441,6 +441,27 @@ pub fn expand_custom_command(
     }
 }
 
+/// Lists auto-loaded skills exactly the way the agent loads them:
+/// `load_skill_index(root)` walks `.skills/`, `.claude/skills/`, and convention
+/// files (`AGENTS.md`, `CLAUDE.md`, ...) — the same call `with_auto_skills()`
+/// makes at agent build time. Returns one display line per skill, in index
+/// order (sorted by name).
+pub fn list_skills(root: &std::path::Path) -> anyhow::Result<Vec<String>> {
+    let index = adk_rust::skill::load_skill_index(root)
+        .map_err(|e| anyhow::anyhow!("Failed to load skill index from {:?}: {e}", root))?;
+    Ok(index
+        .skills()
+        .iter()
+        .map(|skill| {
+            let mut line = format!("{} - {}", skill.name, truncate_line(&skill.description, 70));
+            if !skill.tags.is_empty() {
+                line.push_str(&format!(" [{}]", skill.tags.join(", ")));
+            }
+            line
+        })
+        .collect())
+}
+
 /// Checks if a slash command is a built-in REPL command.
 pub fn is_builtin_command(line: &str) -> bool {
     let cmd = line.split_whitespace().next().unwrap_or("");
@@ -452,6 +473,7 @@ pub fn is_builtin_command(line: &str) -> bool {
             | "/quit"
             | "/new"
             | "/session"
+            | "/skills"
             | "/help"
             | "/grill"
             | "/plan"
@@ -516,6 +538,7 @@ pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiCo
             println!("Commands:");
             println!("  /new      - Start a new conversation session");
             println!("  /session  - Show current session info");
+            println!("  /skills   - List auto-loaded skills (.skills/)");
             println!("  /grill    - Interview to clarify requirements and write GRILL.md");
             println!("  /plan     - Generate structured implementation plan (PLAN.md)");
             println!("  /goal     - Run autonomous Ralph Wiggum development loop");
@@ -639,9 +662,32 @@ pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiCo
             continue;
         }
 
+        if trimmed == "/skills" || trimmed.starts_with("/skills ") {
+            match list_skills(std::path::Path::new(".")) {
+                Ok(lines) if lines.is_empty() => {
+                    println!("No skills found. Create .skills/<name>/SKILL.md to add one.\n");
+                }
+                Ok(lines) => {
+                    println!("Skills (auto-loaded from .skills/):");
+                    for line in lines {
+                        println!("  {line}");
+                    }
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("Error: {}\n", e);
+                }
+            }
+            continue;
+        }
+
         let prompt_text = if let Some(expanded) = expand_custom_command(&config.commands, trimmed) {
             let cmd_name = trimmed.split_whitespace().next().unwrap_or("")[1..].to_string();
-            println!("⚡ Shortcut /{} -> {}\n", cmd_name, truncate_line(&expanded, 80));
+            println!(
+                "⚡ Shortcut /{} -> {}\n",
+                cmd_name,
+                truncate_line(&expanded, 80)
+            );
             expanded
         } else if trimmed.starts_with('/') && !is_builtin_command(trimmed) {
             eprintln!("Unknown command: {trimmed}. Type '/help' for available commands.\n");
@@ -913,7 +959,10 @@ mod tests {
     #[test]
     fn test_expand_custom_command_simple() {
         let mut commands = HashMap::new();
-        commands.insert("review".to_string(), "Inspect the codebase changes".to_string());
+        commands.insert(
+            "review".to_string(),
+            "Inspect the codebase changes".to_string(),
+        );
 
         let expanded = expand_custom_command(&commands, "/review").unwrap();
         assert_eq!(expanded, "Inspect the codebase changes");
@@ -931,10 +980,16 @@ mod tests {
     #[test]
     fn test_expand_custom_command_appends_args_when_no_placeholder() {
         let mut commands = HashMap::new();
-        commands.insert("review".to_string(), "Inspect the codebase changes".to_string());
+        commands.insert(
+            "review".to_string(),
+            "Inspect the codebase changes".to_string(),
+        );
 
         let expanded = expand_custom_command(&commands, "/review src/main.rs").unwrap();
-        assert_eq!(expanded, "Inspect the codebase changes\n\nContext: src/main.rs");
+        assert_eq!(
+            expanded,
+            "Inspect the codebase changes\n\nContext: src/main.rs"
+        );
     }
 
     #[test]
@@ -947,10 +1002,53 @@ mod tests {
     #[test]
     fn test_is_builtin_command() {
         assert!(is_builtin_command("/new"));
+        assert!(is_builtin_command("/skills"));
         assert!(is_builtin_command("/grill"));
         assert!(is_builtin_command("/plan"));
         assert!(is_builtin_command("/goal"));
         assert!(is_builtin_command("exit"));
         assert!(!is_builtin_command("/review"));
+    }
+
+    /// `/skills` must list exactly what the agents auto-load — the shipped
+    /// `.skills/` directory contains code-reviewer and multimodal-pipeline,
+    /// and the index sorts by skill name.
+    #[test]
+    fn test_list_skills_lists_dot_skills_directory() {
+        let lines = list_skills(std::path::Path::new(".")).unwrap();
+        assert!(lines.len() >= 2, "expected repo skills in list: {lines:?}");
+        let names: Vec<&str> = lines
+            .iter()
+            .map(|l| l.split(" - ").next().unwrap())
+            .collect();
+        let reviewer = names
+            .iter()
+            .position(|n| *n == "code-reviewer")
+            .expect("code-reviewer must be listed");
+        let pipeline = names
+            .iter()
+            .position(|n| *n == "multimodal-pipeline")
+            .expect("multimodal-pipeline must be listed");
+
+        // The index is sorted by name — entries appear in that order
+        let reviewer_line = &lines[reviewer];
+        let pipeline_line = &lines[pipeline];
+        assert!(
+            reviewer_line.contains("review") && pipeline_line.contains("multimodal"),
+            "lines should carry descriptions: {reviewer_line:?} / {pipeline_line:?}"
+        );
+        assert!(
+            reviewer_line.contains("["),
+            "tags bracket expected: {reviewer_line:?}"
+        );
+    }
+
+    /// A root without `.skills/` or convention files yields an empty list,
+    /// not an error.
+    #[test]
+    fn test_list_skills_missing_root_is_empty() {
+        let lines = list_skills(std::path::Path::new("./this-path-does-not-exist"))
+            .expect("missing root must not be an error");
+        assert!(lines.is_empty(), "expected no skills: {lines:?}");
     }
 }

@@ -23,16 +23,22 @@ One call, and everything else happens behind it.
 instruction file under `.skills/` in the directory I was started from*. Each directory
 becomes one skill, each `SKILL.md` becomes one document in a `SkillIndex`.
 
-This repository ships exactly one:
+This repository ships two:
 
 ```
 .skills/
-└── code-reviewer/
+├── code-reviewer/
+│   └── SKILL.md
+└── multimodal-pipeline/
     └── SKILL.md
 ```
 
 The index is built **once, at agent construction time**. Add a skill and nothing happens
-until I restart — the index is a struct on the agent, not a live directory watch.
+until I restart — the index is a struct on the agent, not a live directory watch. You can
+inspect it without guessing what got in: the `/skills` REPL command runs the same
+`load_skill_index` discovery the agent does and prints every indexed skill with its name,
+description, and tags. It is the deliberately honest list — Markdown files under `.skills/`
+and convention files (`AGENTS.md`, `CLAUDE.md`, ...) both appear, because both are loaded.
 
 ## 2. How a Skill Reaches the Model
 

@@ -28,7 +28,9 @@ tags: [rust, testing]
 Both frontmatter fields are required. `name` must be 1–64 characters of lowercase letters,
 digits, and hyphens. `description` is the sentence the selection layer matches against. A
 file that fails validation is **skipped without an error** — a malformed skill fails
-silently, which is the single most common "why isn't my skill working" cause.
+silently, which is the single most common "why isn't my skill working" cause. The fastest
+diagnosis is the `/skills` REPL command: it prints every skill that actually got indexed.
+If yours is missing from that list, the skip happened.
 
 ## 2. The Full Frontmatter
 
