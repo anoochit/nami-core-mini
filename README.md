@@ -1,5 +1,10 @@
 # Nami Mini
 
+[![Release](https://github.com/anoochit/nami-core-mini/actions/workflows/release.yml/badge.svg)](https://github.com/anoochit/nami-core-mini/actions/workflows/release.yml)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue)](https://github.com/anoochit/nami-core-mini/releases)
+[![Rust](https://img.shields.io/badge/rust-1.95%2B%20Edition%202024-orange?logo=rust)](https://www.rust-lang.org)
+[![ADK Rust](https://img.shields.io/badge/built%20on-adk--rust%203.0.0-green)](https://github.com/zavora-ai/adk-rust)
+
 Nami Mini is an advanced AI assistant and autonomous agent framework built in Rust, powered by the **Agent Development Kit (`adk-rust`)** and Google's Gemini models. It combines a robust single-binary architecture with hierarchical multi-agent delegation, Model Context Protocol (MCP) support, SQLite-backed persistent memory and sessions, context compaction, workspace security sandboxing, and multimodal media generation (image, text-to-speech, background music, and video synthesis).
 
 ---
