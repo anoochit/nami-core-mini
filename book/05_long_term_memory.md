@@ -43,18 +43,29 @@ Every boot, I throw the old index away and rebuild it:
 memory_service.delete_user("nami_app", "global_wiki").await?;
 
 if wiki_dir.exists() {
-    for entry in WalkDir::new(wiki_dir).into_iter().filter_map(|e| e.ok()) {
-        if entry.path().extension().and_then(|s| s.to_str()) == Some("md") {
-            let content = std::fs::read_to_string(entry.path())?;
-            let doc_name = entry.file_name().to_string_lossy();
-            let memory_entry = MemoryEntry {
-                content: Content::new("user")
-                    .with_text(format!("Wiki [{}]: {}", doc_name, content)),
-                author: "wiki_indexer".to_string(),
-                timestamp: chrono::Utc::now(),
-            };
-            memory_service.add_entry("nami_app", "global_wiki", memory_entry).await?;
-        }
+    // WalkDir is blocking traversal — it runs on the blocking thread pool,
+    // never on a Tokio worker
+    let md_files = tokio::task::spawn_blocking(move || {
+        WalkDir::new(wiki_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
+            .map(|e| e.path().to_path_buf())
+            .collect::<Vec<_>>()
+    })
+    .await?;
+
+    for file_path in md_files {
+        let content = tokio::fs::read_to_string(&file_path).await?;
+        let doc_name = file_path.file_name().map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let memory_entry = MemoryEntry {
+            content: Content::new("user")
+                .with_text(format!("Wiki [{}]: {}", doc_name, content)),
+            author: "wiki_indexer".to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+        memory_service.add_entry("nami_app", "global_wiki", memory_entry).await?;
     }
 }
 ```
@@ -69,6 +80,14 @@ Three decisions live in that block, and each one was paid for with a bug:
 - **The content is prefixed** with `Wiki [<file>]: `. Retrieval hands the model raw text;
   without the prefix it has no idea whether it is looking at project knowledge or a user
   message.
+
+And one structural decision, paid for under load: the traversal and the reads are
+separated. `WalkDir` and `std::fs::read_to_string` are both blocking filesystem calls —
+called directly inside an async function they occupy Tokio workers, and enough of that
+starves the runtime. So the traversal collects paths on the blocking thread pool with
+`spawn_blocking`, and each document is read with `tokio::fs::read_to_string`. The
+await between additions is the natural yield point; nothing blocks a worker longer than
+one disk read scheduled asynchronously.
 
 Subdirectories are walked too, so files in subfolders index the same as top-level files in `wiki/`. Non-Markdown files are skipped silently.
 

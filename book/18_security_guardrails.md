@@ -16,7 +16,13 @@ impl WorkspaceGuard {
     pub fn new(allowed_paths: Vec<PathBuf>, read_only: bool) -> Result<Self> {
         let mut allowed_roots = Vec::new();
         for path in allowed_paths {
-            let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            // A root that does not exist yet is created, never stored raw
+            if !path.exists() {
+                std::fs::create_dir_all(&path)?;
+            }
+            // Canonicalisation must succeed — a relative root compared against an
+            // absolute target with starts_with() fails everything, so fail fast here
+            let canonical = std::fs::canonicalize(&path)?;
             allowed_roots.push(canonical);
         }
         Ok(Self { allowed_roots, read_only })
@@ -42,10 +48,18 @@ impl WorkspaceGuard {
 
 Three properties make this trustworthy rather than merely present:
 
-- **Canonicalisation happens on both sides.** Roots are canonicalised at construction;
-  targets are canonicalised before comparison — and when the target does not exist yet, its
-  *parent* is canonicalised and the filename reattached. That last branch is what stops
-  `./docs/../../secrets.env` from passing a naive string check.
+- **Roots are absolute before they are trusted.** Each allowed root is created (if it
+  does not exist yet) and canonicalised at construction. There is no fallback that
+  stores a raw relative path — an earlier version of this code used
+  `unwrap_or_else(|_| path.clone())`, which silently compared absolute targets against
+  non-canonicalised roots and denied everything. Silent fallback in a security control
+  is worse than a loud failure at boot, so the canonicalisation is now an error path.
+- **Canonicalisation happens on both sides.** Targets are canonicalised before
+  comparison — and when the target does not exist yet, its *parent* is canonicalised
+  and the filename reattached. The same absolute standard applies to the one remaining
+  branch where the target has no parent: it resolves against the current directory.
+  That last branch is what stops `./docs/../../secrets.env` from passing a naive string
+  check.
 - **The check is prefix-based on canonical paths**, so symlinks and `..` segments resolve
   before the comparison rather than after it.
 - **`is_write` is an argument, not a guess.** Read tools pass `false`, write tools pass
@@ -121,7 +135,11 @@ Stated plainly, because a security chapter that only lists controls is marketing
 - **No authentication on the API.** Loopback binding is the only thing in front of it. Do
   not bind to `0.0.0.0` on a network you do not control.
 - **No sandbox around bash.** The command runs with your user's full OS permissions,
-  constrained only by the workspace convention.
+  constrained only by the workspace convention. The DevTools shell is unconditional and
+  unbounded in duration. The workspace `execute_command` tool (Chapter 10) is bounded —
+  a 10-minute timeout with `kill_on_drop(true)` means a hung or interactive command
+  cannot outlive it and cannot leave an orphan process behind. Bounding *duration* is a
+  reliability measure, not a privilege boundary.
 - **No per-tool rate or spend limits.**
 
 ## 6. Hardening, in Priority Order

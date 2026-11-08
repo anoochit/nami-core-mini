@@ -38,7 +38,9 @@ Details that matter in practice:
   9-line file are both readable, and the model can reference a line number back to you.
 - `write_file` creates parent directories automatically. It does not merge — it overwrites.
 - `list_files` takes a glob, `**/*` by default, and backslashes are normalised to `/` so
-  patterns behave the same on Windows.
+  patterns behave the same on Windows. Glob matching is synchronous filesystem I/O, so it
+  executes inside `tokio::task::spawn_blocking` — the async tool closure only awaits the
+  result and never blocks a Tokio worker.
 
 ```rust
 // src/tools/filesystem.rs
@@ -51,6 +53,31 @@ let full_pattern = if target_dir.is_dir() {
 
 Every one of these calls `validate_path` first, in both directions — read and write. That is
 the guardrail from Chapter 18 doing its work at the only place it can.
+
+## 2b. `execute_command`
+
+The fourth member of the toolset runs a shell command (`cmd.exe /C` on Windows, `sh -c`
+elsewhere) inside a validated workspace sub-directory and returns `stdout`, `stderr`, and
+`exit code`:
+
+| Tool | Arguments | Returns |
+|------|-----------|---------|
+| `execute_command` | `command`, optional `path` (working directory) | `success`, `exit_code`, `stdout`, `stderr` |
+
+The working directory goes through `validate_path(..., true)` — the same write-level
+check as `write_file`, so read-only mode disables the shell entirely rather than leaving
+it to the model to behave. Two bounds come with it, both paid for by agents that hung in
+unattended runs:
+
+- **A 10-minute timeout** returns a structured `error` instead of the run stalling
+  forever on a command waiting for input, such as a tool that launched a REPL.
+- **`kill_on_drop(true)`** kills the child when the timed-out future is dropped. Without
+  it the timeout returns control to the model while the hung process stays alive on the
+  machine — an orphan with your full user permissions.
+
+This is a plain shell, not a sandbox: the process inherits your OS permissions. It is
+bounded in duration and confined to a workspace directory, and those are the only
+guarantees it offers (Chapter 18 states the same blunter way).
 
 ## 3. `get_datetime`
 
