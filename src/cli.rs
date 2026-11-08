@@ -50,6 +50,41 @@ pub struct TurnStats {
     tokens: Option<TokenTotals>,
 }
 
+impl TokenTotals {
+    /// Add the turn's usage into a session accumulator.
+    ///
+    /// Field-wise addition mirrors `TurnTracker::finish`: provider totals are
+    /// summed per model call, so a session total is the sum of per-turn totals.
+    fn accumulate(&mut self, other: &TokenTotals) {
+        self.prompt += other.prompt;
+        self.output += other.output;
+        self.thinking += other.thinking;
+        self.total += other.total;
+    }
+
+    /// Displayed grand total: `total` when the provider reports it, otherwise
+    /// the sum of the three component fields (same fallback as `stats_line`).
+    fn reported_total(&self) -> i64 {
+        if self.total > 0 {
+            self.total
+        } else {
+            self.prompt + self.output + self.thinking
+        }
+    }
+}
+
+/// Formats the `/stats` session report — one string per output line
+fn session_stats_report(turns: u32, tokens: &TokenTotals) -> Vec<String> {
+    vec![
+        "Session token usage:".to_string(),
+        format!("  turns     {}", turns),
+        format!("  prompt    {}", fmt_int(tokens.prompt)),
+        format!("  output    {}", fmt_int(tokens.output)),
+        format!("  thinking  {}", fmt_int(tokens.thinking)),
+        format!("  total     {}", fmt_int(tokens.reported_total())),
+    ]
+}
+
 /// Tracks timing and token usage during a turn stream
 struct TurnTracker {
     stats: TurnStats,
@@ -473,6 +508,7 @@ pub fn is_builtin_command(line: &str) -> bool {
             | "/quit"
             | "/new"
             | "/session"
+            | "/stats"
             | "/skills"
             | "/help"
             | "/grill"
@@ -489,6 +525,11 @@ pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiCo
     println!();
 
     let mut grill_session = crate::grill::GrillSessionState::default();
+    // Session-scoped token usage across chat turns — fed by the main loop's
+    // TurnStats only (grill/plan/goal render their own streams internally),
+    // and reset by `/new` so the counter follows the current session.
+    let mut session_tokens = TokenTotals::default();
+    let mut session_turns: u32 = 0;
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(32);
     std::thread::spawn(move || {
@@ -518,6 +559,8 @@ pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiCo
 
         if trimmed == "/new" {
             grill_session.active = false;
+            session_tokens = TokenTotals::default();
+            session_turns = 0;
             match client.new_session().await {
                 Ok(_) => println!("Switched to new session: {}\n", client.session_id()),
                 Err(e) => eprintln!("Failed to create new session: {}\n", e),
@@ -534,10 +577,23 @@ pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiCo
             continue;
         }
 
+        if trimmed == "/stats" {
+            if session_turns == 0 {
+                println!("No token usage recorded in this session yet.\n");
+            } else {
+                for line in session_stats_report(session_turns, &session_tokens) {
+                    println!("{line}");
+                }
+                println!();
+            }
+            continue;
+        }
+
         if trimmed == "/help" {
             println!("Commands:");
             println!("  /new      - Start a new conversation session");
             println!("  /session  - Show current session info");
+            println!("  /stats    - Show session token usage (prompt, output, thinking)");
             println!("  /skills   - List auto-loaded skills (.skills/)");
             println!("  /grill    - Interview to clarify requirements and write GRILL.md");
             println!("  /plan     - Generate structured implementation plan (PLAN.md)");
@@ -705,6 +761,10 @@ pub async fn run_repl(client: &mut NamiApiClient, config: &crate::config::NamiCo
         };
 
         let (stats, _) = render_stream_response(response, config.cli.display_options()).await;
+        if let Some(tokens) = stats.tokens {
+            session_tokens.accumulate(&tokens);
+            session_turns += 1;
+        }
         if let Some(line) = stats_line(&stats) {
             print!("\n\n{line}");
             io::stdout().flush().ok();
@@ -1002,12 +1062,74 @@ mod tests {
     #[test]
     fn test_is_builtin_command() {
         assert!(is_builtin_command("/new"));
+        assert!(is_builtin_command("/session"));
+        assert!(is_builtin_command("/stats"));
         assert!(is_builtin_command("/skills"));
         assert!(is_builtin_command("/grill"));
         assert!(is_builtin_command("/plan"));
         assert!(is_builtin_command("/goal"));
         assert!(is_builtin_command("exit"));
         assert!(!is_builtin_command("/review"));
+    }
+
+    /// Session accumulation is field-wise addition of per-turn totals
+    #[test]
+    fn test_token_totals_accumulate_fieldwise() {
+        let mut session = TokenTotals::default();
+        session.accumulate(&TokenTotals {
+            prompt: 900,
+            output: 160,
+            thinking: 180,
+            total: 1240,
+        });
+        session.accumulate(&TokenTotals {
+            prompt: 1000,
+            output: 250,
+            thinking: 0,
+            total: 1250,
+        });
+
+        assert_eq!(session.prompt, 1900);
+        assert_eq!(session.output, 410);
+        assert_eq!(session.thinking, 180);
+        assert_eq!(session.reported_total(), 2490);
+    }
+
+    /// When the provider omits `total`, the displayed grand total falls back
+    /// to prompt + output + thinking (exact same fallback `stats_line` uses)
+    #[test]
+    fn test_reported_total_falls_back_to_component_sum() {
+        let tokens = TokenTotals {
+            prompt: 4,
+            output: 3,
+            thinking: 2,
+            total: 0,
+        };
+        assert_eq!(tokens.reported_total(), 9);
+    }
+
+    #[test]
+    fn test_session_stats_report_lists_all_components() {
+        let report = session_stats_report(
+            2,
+            &TokenTotals {
+                prompt: 1890,
+                output: 410,
+                thinking: 180,
+                total: 2480,
+            },
+        );
+
+        let text = report.join("\n");
+        assert!(text.starts_with("Session token usage:"));
+        assert!(text.contains("turns     2"));
+        assert!(
+            text.contains("prompt    1,890"),
+            "thousands grouping: {text}"
+        );
+        assert!(text.contains("output    410"));
+        assert!(text.contains("thinking  180"));
+        assert!(text.contains("total     2,480"));
     }
 
     /// `/skills` must list exactly what the agents auto-load — the shipped

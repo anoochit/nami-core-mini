@@ -7,7 +7,7 @@
   "temperature": 0.2,
   "cli": {
     "user_id": "user",
-    "show_thinking": false,
+    "show_thinking": true,
     "show_tool_call": true,
     "show_tool_result": false,
     "show_answer": true
