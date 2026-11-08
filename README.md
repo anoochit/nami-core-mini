@@ -17,14 +17,14 @@ Nami Mini is an advanced AI assistant and autonomous agent framework built in Ru
    - Retry & Reflection plugin (`adk-retry-reflect`) allowing agents to self-correct upon tool execution failures.
 
 2. **Rich Tooling & Ecosystem Integration (`src/tools/`)**
-   - **Devtools & Filesystem:** Sandboxed file reading/writing, directory traversal, and command execution governed by `WorkspaceGuard`.
+   - **Devtools & Filesystem:** Sandboxed file reading/writing, directory traversal, and command execution governed by `WorkspaceGuard`. All allowed roots are resolved to absolute canonical paths at startup (missing directories are created automatically), ensuring reliable scope enforcement. Shell commands run strictly inside validated workspace roots and are protected with a 10-minute timeout that kills orphaned processes automatically.
    - **Web Search & Data:** Google search integration (`google_search`), Web HTML plain-text extractor (`web_fetch`), date/time utilities, and weather forecasting.
    - **Local Knowledge Retrieval:** `search_wiki` queries the `wiki/` Markdown knowledge base indexed into SQLite long-term memory — no API key and no network required.
    - **Model Context Protocol (MCP):** Full support for both Stdio subprocess servers and remote streamable HTTP MCP endpoints (`src/mcp.rs`).
 
 3. **Persistent Memory & Background Server (`src/memory.rs`, `src/server.rs`)**
    - SQLite-backed state storage (`adk-session`, `adk-memory`) for multi-turn conversations and long-term agent recall.
-   - Long-term memory is driven by `wiki/`: Markdown documents are re-indexed at every startup and recalled at runtime through the `search_wiki` tool.
+   - Long-term memory is driven by `wiki/`: Markdown documents are re-indexed at every startup and recalled at runtime through the `search_wiki` tool. Indexing runs fully async (blocking filesystem traversal and reads are offloaded to the Tokio blocking pool) to keep the runtime responsive under heavy load.
    - High-performance HTTP server (`serve`) built with Axum (`src/server.rs`) exposing SSE streams, Web UI (`/ui/`), durable background runs (`/api/runs`), and scheduled cron jobs (`/api/cron`).
    - CLI modes (`chat`, `ask`) supporting configurable output visibility (`show_tool_call`, `show_tool_result`, `show_thinking`) and clean answer-only ask responses.
 

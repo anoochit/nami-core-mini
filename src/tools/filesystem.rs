@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(JsonSchema, Serialize, Deserialize)]
 pub struct ReadFileParams {
@@ -77,10 +78,23 @@ pub fn create_execute_command_tool(guard: WorkspaceGuard) -> Arc<dyn Tool> {
                 command.current_dir(work_dir);
                 command.stdout(std::process::Stdio::piped());
                 command.stderr(std::process::Stdio::piped());
+                // kill_on_drop จำเป็นเมื่อ timeout: future ถูก drop แล้ว child ต้องถูก kill
+                // ไม่เช่นนั้น process ค้างอยู่บนเครื่อง (orphan process)
+                command.kill_on_drop(true);
 
-                let output = match command.output().await {
-                    Ok(out) => out,
-                    Err(e) => return Ok(json!({ "error": format!("Failed to execute command: {}", e) })),
+                // กำหนด timeout กันคำสั่งห้อย (เช่น interactive prompt / infinite loop)
+                // ระบบรัน unattended ไม่มีมนุษย์กด Ctrl-C ให้ได้
+                const COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
+                let output = match tokio::time::timeout(COMMAND_TIMEOUT, command.output()).await {
+                    Ok(Ok(out)) => out,
+                    Ok(Err(e)) => {
+                        return Ok(json!({ "error": format!("Failed to execute command: {}", e) }));
+                    }
+                    Err(_) => {
+                        return Ok(json!({
+                            "error": format!("Command timed out after {} seconds", COMMAND_TIMEOUT.as_secs())
+                        }));
+                    }
                 };
 
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -220,12 +234,28 @@ pub fn create_filesystem_toolset(guard: WorkspaceGuard) -> Vec<Arc<dyn Tool>> {
                     pattern.to_string()
                 };
 
-                let mut matches = Vec::new();
-                for path in glob::glob(&full_pattern).into_iter().flatten().flatten() {
-                    if path.is_file() {
-                        matches.push(path.to_string_lossy().to_string());
+                // glob เป็น blocking filesystem I/O — ต้องรันบน blocking thread pool
+                // กัน thread starvation ของ Tokio runtime ภายใต้โหลดหนัก
+                let glob_pattern = full_pattern;
+                let matches = match tokio::task::spawn_blocking(move || {
+                    let mut found = Vec::new();
+                    for path in glob::glob(&glob_pattern).into_iter().flatten().flatten() {
+                        if path.is_file() {
+                            found.push(path.to_string_lossy().to_string());
+                        }
                     }
-                }
+                    Ok::<_, std::io::Error>(found)
+                })
+                .await
+                {
+                    Ok(Ok(found)) => found,
+                    Ok(Err(e)) => {
+                        return Ok(json!({ "error": format!("Glob matching failed: {}", e) }));
+                    }
+                    Err(e) => {
+                        return Ok(json!({ "error": format!("Glob task panicked: {}", e) }));
+                    }
+                };
 
                 Ok(json!({
                     "matches": matches,
