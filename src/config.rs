@@ -198,6 +198,8 @@ pub enum AgentTool {
     Datetime,
     /// Weather tool (`get_weather_forecast`)
     Weather,
+    /// Local wiki search over long-term memory (`search_wiki`)
+    Wiki,
     /// Media tools via Gemini API (`generate_image`/`generate_tts`/`generate_music`/`generate_video`)
     Media,
 }

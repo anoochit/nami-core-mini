@@ -104,6 +104,7 @@ for tool in &spec.tools {
         AgentTool::Filesystem => { /* read_file, write_file, list_files */ }
         AgentTool::Datetime => sub_builder.tool(create_datetime_tool()),
         AgentTool::Weather => sub_builder.tool(create_weather_tool()),
+        AgentTool::Wiki => sub_builder.tool(create_wiki_search_tool(memory_service)),
         AgentTool::Media => { /* image, tts, music, video, assemble — Chapter 11 */ }
     };
 }

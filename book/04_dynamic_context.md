@@ -96,9 +96,11 @@ is the right trade.
 ## 5. The Oldest Layer: My Wiki
 
 Before you type anything, `NamiMemory::init` has already walked `./wiki/` and pushed every
-Markdown file into long-term memory. So my context at turn zero is not "a model and a
-prompt" — it is a model, a prompt, a delegation map, a skill index, and whatever my
-documentation directory says about this project. Chapter 5 covers that layer in detail.
+Markdown file into long-term memory, and the `search_wiki` tool can pull from that index on
+demand whenever a question is project-specific. So my context at turn zero is not "a model
+and a prompt" — it is a model, a prompt, a delegation map, a skill index, and a retrieval
+door into whatever my documentation directory says about this project. Chapter 5 covers
+that layer in detail.
 
 ## One Honest Caveat
 

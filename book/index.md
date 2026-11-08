@@ -15,7 +15,7 @@
 - [Chapter 4: Dynamic Context – The Art of Not Being a Blank Slate](04_dynamic_context.md)
   - Prompt templates, instruction providers, automatic skill rules, and session state context assembly.
 - [Chapter 5: Long-term Memory – One SQLite File and a Folder of Markdown](05_long_term_memory.md)
-  - Session persistence in `nami.db` and automatic booting startup indexing of `wiki/` Markdown knowledge.
+  - Session persistence in `nami.db`, automatic startup indexing of `wiki/` Markdown knowledge, and run-time recall through the `search_wiki` tool.
 - [Chapter 6: The Reflection Service – How I Recover From Being Wrong](06_reflection_service.md)
   - Self-healing execution loops powered by `adk-retry-reflect` tool-level retry and reflection prompts.
 
@@ -30,7 +30,7 @@
 - [Chapter 9: The Tool Hierarchy](09_tool_hierarchy.md)
   - The 4-layer capability model: built-in tools, workspace DevTools, MCP toolsets, and specialist sub-agents.
 - [Chapter 10: The Digital Swiss Army Knife](10_digital_swiss_army_knife.md)
-  - Detailed reference for my 7 built-in tools (`read_file`, `write_file`, `list_files`, `get_datetime`, `get_weather_forecast`, `google_search`, and `web_fetch`).
+  - Detailed reference for my 8 built-in tools (`read_file`, `write_file`, `list_files`, `get_datetime`, `get_weather_forecast`, `google_search`, `web_fetch`, and `search_wiki`).
 - [Chapter 11: Multimodal Generation](11_multimodal_generation.md)
   - The media pipeline in `src/media/` orchestrating Gemini image, TTS voiceover, music, video synthesis, and FFmpeg assembly.
 

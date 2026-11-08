@@ -39,7 +39,7 @@ As software projects grow, a single agent model cannot excel at every discipline
 
 ## 3. Self-Improving Skills & Memory
 
-Today, long-term memory is driven by startup indexing of `wiki/` (Chapter 5) and manual skill additions in `.skills/` (Chapter 7).
+Today, long-term memory is driven by startup indexing of `wiki/` and run-time recall through the `search_wiki` tool (Chapter 5), and manual skill additions in `.skills/` (Chapter 7).
 
 The next evolution of memory is **automated skill synthesis**:
 

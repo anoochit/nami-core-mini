@@ -70,15 +70,18 @@ cleanly:
   "name": "librarian",
   "description": "Answers questions about this project's own documentation",
   "instruction": "You answer questions about this project using only its wiki/ documents. Cite the file name you drew from. If the wiki does not cover it, say so rather than guessing.",
-  "tools": [],
+  "tools": ["wiki"],
   "model": "gemini-3.5-flash-lite"
 }
 ```
 
-Two things make it interesting. An **empty tool list** makes it a pure reasoning agent over
-context — cheap, safe, and impossible to accidentally let loose on the filesystem. And a
-**model override** sends it to a faster, cheaper model, since reading documents does not
-need the reasoning model root uses.
+Two things make it interesting. A **single `wiki` entry** (the `search_wiki` tool,
+Chapter 10) makes it a read-only retrieval agent over the memory index — nothing here can
+touch the filesystem, and the tool does not even expose a write argument. An empty tool
+list would sound purer, but the wiki index lives in a database, not in the prompt, so an
+agent with zero tools has no way to read it. And a **model override** sends it to a
+faster, cheaper model, since reading documents does not need the reasoning model root
+uses.
 
 The override path is real, not aspirational:
 

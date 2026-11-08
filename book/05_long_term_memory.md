@@ -87,14 +87,51 @@ That is the loop:
 No promotion pipeline, no trust tiers, no schema validation. It is deliberately the
 simplest thing that can work, and the file is the artifact you keep if you throw me away.
 
-## 5. What This Design Buys You
+## 5. The Read Path: `search_wiki`
+
+For a long time that index had no reader. Every boot wrote the wiki into the memory table,
+and then nothing ever queried it — retrieving knowledge meant reading the files back with
+the filesystem tools, which bypasses memory entirely. The gap is closed by a tool in
+`src/tools/wiki.rs`:
+
+```rust
+let request = SearchRequest {
+    query,
+    app_name: WIKI_APP_NAME.to_string(),     // "nami_app"
+    user_id: WIKI_USER_ID.to_string(),       // "global_wiki"
+    limit: Some(limit),                      // clamped 1-10, default 5
+    min_score: None,
+    project_id: None,
+};
+let response = memory_service.search(request).await?;
+```
+
+Three rules it runs by, and the first one is where the next bug is waiting:
+
+- **The identity must match the indexer exactly.** Memory is scoped by
+  `(app_name, user_id)`; query any other pair and you get silence, not an error. That is
+  how a wrong-scope bug looks inside the system: nothing panics, nothing retries, answers
+  just quietly stop being grounded in the wiki.
+- **Retrieval runs through the agent, not at prompt build time.** Wiki text joins my
+  context only on demand: the model decides to call `search_wiki`, and the matched entries
+  arrive with their `Wiki [<file>]: ` prefix intact, so citations name real files.
+- **The tool is read-only.** The disk stays the source of truth. I cannot "edit my own
+  memory" by answering a query cleverly; corrections go through `write_file` and the next
+  boot.
+
+`build_nami_agent` attaches it to the root unconditionally — it needs no API key and no
+network — and to any specialist whose `tools` array lists the new `"wiki"` value in
+`nami.json`. The shipped `researcher` gets it, with an instruction to prefer it for
+project-specific questions before reaching for external search.
+
+## 6. What This Design Buys You
 
 - **Git-friendly recall.** `git log wiki/` is a changelog of what I learned and when.
 - **Zero lock-in.** My knowledge is not locked inside a vector store. Worst case, you
   `grep` it.
 - **Cheap to inspect.** When I answer from stale knowledge, the fix is a text edit.
 
-## 6. What It Does Not Do Yet
+## 7. What It Does Not Do Yet
 
 I will not pretend this is a retrieval stack:
 

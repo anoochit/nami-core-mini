@@ -3,9 +3,11 @@ use crate::mcp::load_mcp_manager;
 use crate::tools::{
     create_datetime_tool, create_execute_command_tool, create_filesystem_toolset,
     create_media_toolset, create_search_tool, create_weather_tool, create_web_fetch_tool,
+    create_wiki_search_tool,
 };
 use crate::workspace::WorkspaceGuard;
 use adk_devtools::{DevToolset, Workspace};
+use adk_memory::MemoryService;
 use adk_retry_reflect::RetryReflectPluginBuilder;
 use adk_rust::prelude::*;
 use adk_rust::tool::mcp::manager::McpServerManager;
@@ -39,6 +41,7 @@ pub(crate) fn effective_temperature(config: &NamiConfig, model: &str) -> Option<
 pub async fn build_nami_agent(
     config: &NamiConfig,
     _guard: WorkspaceGuard,
+    memory_service: Arc<dyn MemoryService>,
 ) -> anyhow::Result<NamiAgent> {
     let model = build_model(config)?;
 
@@ -132,6 +135,10 @@ pub async fn build_nami_agent(
                 }
                 AgentTool::Datetime => sub_builder.tool(create_datetime_tool()),
                 AgentTool::Weather => sub_builder.tool(create_weather_tool()),
+                // Local wiki search over the long-term memory index (identity `nami_app`/`global_wiki`)
+                AgentTool::Wiki => {
+                    sub_builder.tool(create_wiki_search_tool(Arc::clone(&memory_service)))
+                }
                 // Media tools (Gemini image/TTS/video) — built from `media.*` in nami.json
                 // Returns empty vec when `media.enabled` is false (warned below)
                 AgentTool::Media => {
@@ -189,6 +196,9 @@ pub async fn build_nami_agent(
         .tool(create_weather_tool())
         .tool(create_search_tool())
         .tool(create_web_fetch_tool())
+        // Local wiki knowledge base — indexed from `wiki/` by `NamiMemory::init` on boot.
+        // Root always gets it: it costs no API key and grounds project-specific answers.
+        .tool(create_wiki_search_tool(Arc::clone(&memory_service)))
         .tool(create_execute_command_tool(WorkspaceGuard::new(
             config.workspace.allowed_paths.clone(),
             config.workspace.read_only,

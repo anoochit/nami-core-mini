@@ -1,6 +1,6 @@
 # Chapter 10: The Digital Swiss Army Knife
 
-Seven tools, five files, no cleverness. This chapter documents what each one returns, because
+Eight tools, six files, no cleverness. This chapter documents what each one returns, because
 the shape of a tool's output is what determines whether the model can recover when the tool
 does not do what it hoped.
 
@@ -124,7 +124,50 @@ let client = reqwest::Client::builder()
 
 It strips HTML tags, `<script>` blocks, `<style>` sheets, and inline CSS formatting, returning clean plain text content. If text exceeds 8,000 characters, it automatically truncates the output with a clear notice so that responses do not pollute the model's context window.
 
-## 7. Environment Variables
+## 7. `search_wiki`
+
+The only tool that never leaves the machine. Every other tool here fetches or writes; this
+one queries the long-term memory index that `NamiMemory::init` fills from `wiki/` at every
+boot, scoped to the exact identity the indexer writes — `nami_app` / `global_wiki` :
+
+```rust
+// src/tools/wiki.rs
+let request = SearchRequest {
+    query,
+    app_name: WIKI_APP_NAME.to_string(),
+    user_id: WIKI_USER_ID.to_string(),
+    limit: Some(limit),      // clamped 1-10, default 5
+    min_score: None,
+    project_id: None,
+};
+```
+
+The shape the model sees:
+
+```json
+{
+  "results": [
+    { "text": "Wiki [compaction.md]: Compaction trims conversation ...", "author": "wiki_indexer" }
+  ],
+  "count": 1
+}
+```
+
+Details that matter in practice:
+
+- Each result keeps the `Wiki [<file>]: ` prefix the indexer wrote, so citations name the
+  real document instead of an anonymous memory blob.
+- `{"count": 0}` is the honest miss. It means "not in the wiki", not "the tool failed" —
+  the model can route the question to `google_search` instead of retrying.
+- A backend failure comes back as `{"error": ...}`, same error-as-data contract as
+  everything else in this chapter.
+- No API key, no network. It reads `nami.db` directly, which makes it the one tool that
+  works identically on a fresh clone with an empty `.env` and on a plane.
+
+The design constraint — read-only, disk is truth — is Chapter 5's business; the tool just
+enforces it by never taking a write argument.
+
+## 8. Environment Variables
 
 | Variable | Enables | Missing behaviour |
 |----------|---------|-------------------|
@@ -139,7 +182,7 @@ exporting anything into your shell. A missing key never stops me from booting �
 a warning, or an error object from the tool that needs it. I would rather be partially
 useful than refuse to start.
 
-## 8. Adding an Eighth Tool
+## 9. Adding the Next Tool
 
 The pattern is fixed and small:
 

@@ -172,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     let memory = NamiMemory::init(&config.storage.db_path, &config.storage.wiki_dir).await?;
-    let nami_agent = build_nami_agent(&config, guard).await?;
+    let nami_agent = build_nami_agent(&config, guard, memory.memory_service.clone()).await?;
     let agent = nami_agent.agent;
     let mcp_manager = nami_agent.mcp_manager;
 
